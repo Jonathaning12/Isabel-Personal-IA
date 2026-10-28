@@ -13,7 +13,7 @@ Borrador: un asistente personal de IA **privado** que conoce tus notas y documen
 |---|---|---|
 | Inferencia en Nebius Token Factory | Todas las llamadas de chat y embeddings van a la API de Nebius (compatible con OpenAI) | `src/assistant/config.py`, `scripts/verify_models.py` |
 | Modelos open source de NVIDIA | Modelos Nemotron (chat) y NV-Embed o equivalente (embeddings), verificados contra el catálogo real | `.env` → `LLM_MODEL`, `EMBED_MODEL` |
-| Privacidad y control de datos | *(Fase 2: Qdrant local)* | — |
+| Privacidad y control de datos | Qdrant corre en un contenedor en tu máquina, con un volumen local. Los puertos solo escuchan en `127.0.0.1`, así que nadie en tu red puede acceder. *(Fase 2: aquí se guardarán tus documentos y recuerdos.)* | `docker-compose.yml` |
 | Sandbox de ejecución | *(Fase 3: contenedor Docker aislado)* | — |
 
 ## Arquitectura explicada (sin jerga)
@@ -36,6 +36,15 @@ Nebius Token Factory no ofrece ningún modelo de embeddings de NVIDIA; el único
 **¿Por qué Nemotron 3 Super 120B y no el Ultra o el Nano?**
 Probamos los cuatro con tool calling y todos funcionaron. Super ofrece el mejor equilibrio entre calidad y velocidad (~2 s). Ultra es más grande y caro, y Nano razona peor. Nano queda como respaldo si hay límites de uso.
 
+**¿Qué pasa si Nebius falla o tarda?**
+Cada llamada tiene un tiempo máximo (*timeout*). Los errores temporales, como el 429 (demasiadas peticiones), los errores 5xx y los cortes de red, se reintentan hasta 4 veces, esperando cada vez más (*backoff* exponencial). Los errores de nuestra parte (4xx, por ejemplo una petición mal formada) no se reintentan, porque repetirlos no sirve. Todo está probado con tests que simulan la API.
+
+**¿Cómo sabéis que funciona sin gastar créditos en cada test?**
+Hay dos tipos de pruebas. Las **unitarias** simulan la API de Nebius (con `respx`) y comprueban reintentos, errores y lotes sin hacer ninguna llamada real; tardan menos de 1 segundo. Las **live** (`pytest -m live`) llaman a Nebius de verdad y se ejecutan solo cuando queremos.
+
+**¿Cómo evitáis subir una API key a GitHub por error?**
+Además de `.gitignore`, cada `git commit` pasa por **gitleaks**, un escáner de secretos. Lo probamos con una key falsa y bloqueó el commit. La imagen Docker tampoco contiene el `.env`: la key se pasa solo al arrancar el contenedor.
+
 **¿Cómo reproduce otra persona vuestro entorno?**
 Con `uv sync`. El archivo `uv.lock` fija las versiones exactas de todas las dependencias, y `.python-version` fija Python 3.12.
 
@@ -49,7 +58,18 @@ Con `uv sync`. El archivo `uv.lock` fija las versiones exactas de todas las depe
 | **Dimensión del embedding** | La longitud de ese vector (por ejemplo, 4096 números). La base de datos de vectores necesita saberla de antemano. | `.env` → `EMBED_DIM` |
 | **Modelo de razonamiento** | Modelo que "piensa" internamente (genera tokens de razonamiento ocultos) antes de dar la respuesta. Nemotron 3 lo es. Esos tokens cuentan en el límite `max_tokens`, y el razonamiento se puede apagar en tareas simples para ir más rápido. | `scripts/verify_models.py` → `enable_thinking` |
 | **Tool calling** | El modelo no ejecuta nada: devuelve un JSON diciendo "quiero llamar a la función X con estos argumentos". Nuestro código decide si ejecutarla. | *(Fase 3)* `src/assistant/tools/` |
+| **Streaming** | En lugar de esperar la respuesta completa, el modelo la envía token a token y la mostramos mientras llega (como ChatGPT). Es la misma idea que una respuesta HTTP por chunks. | `src/assistant/llm/chat.py` → `stream()` |
+| **Batching (lotes)** | Enviar varios textos en una sola petición de embeddings en lugar de uno por uno. Es más rápido y gasta menos peticiones. | `src/assistant/llm/embeddings.py` |
 | **Token** | El trozo de texto con el que trabaja el modelo (aprox. ¾ de una palabra). Los límites y costes se miden en tokens. | `.env` → `MAX_COMPLETION_TOKENS` |
+
+## Cómo comprobarlo tú mismo (estado actual)
+```
+uv run pytest -q                     # 8 pruebas unitarias, API simulada (< 1 s)
+uv run pytest -q -m live             # 2 pruebas reales contra Nebius
+docker compose up -d                 # arranca la API y Qdrant
+curl http://127.0.0.1:8000/health    # debe decir "nebius":"ok" y "qdrant":"ok"
+```
+También puedes abrir http://127.0.0.1:8000/docs en el navegador: FastAPI genera la documentación de la API automáticamente (Swagger).
 
 ## Limitaciones honestas y trabajo futuro
 - La inferencia no es local: el texto que se envía al modelo sale de la máquina hacia Nebius. Lo que es local es el **almacenamiento** (documentos, vectores, memoria).
