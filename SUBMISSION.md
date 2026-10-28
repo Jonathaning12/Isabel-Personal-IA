@@ -19,7 +19,7 @@
 | R2 | **URL to a working demo, hosted app, or test build** | See §3 (decision pending) | ⬜ |
 | R3 | Text description of features and functionality | §4 draft below | ⬜ |
 | R4 | **Public** repo URL (GitHub/GitLab/Bitbucket) with all source, assets, instructions | GitHub, public before submitting | ⬜ |
-| R5 | **Open-source license file** detectable in the repo's About section | `LICENSE` at the repo root (MIT or Apache-2.0) | ⬜ |
+| R5 | **Open-source license file** detectable in the repo's About section | `LICENSE` (MIT) at the repo root | ✅ file added; verify on GitHub once public |
 | R6 | README with setup instructions and clear run guidance | `README.md` quickstart, tested on a clean clone | 🟡 basic version exists |
 | R7 | README **highlights NVIDIA Nemotron usage**, **where Token Factory accelerated the workflow**, and any other Nebius tools | Dedicated README section (§5 below) | ⬜ |
 | R8 | **Demo video < 3 min**, public on **YouTube**, showing the project running on its intended device; no third-party trademarks or copyrighted music | Screen recording of the terminal demo on the Mac; no music, or royalty-free only | ⬜ |
@@ -56,4 +56,7 @@ Write down real friction and praise as it happens. Facts only, with dates.
 - 2026-10-28 · 👎 Many examples and guides still reference `Llama-3.1-Nemotron-70B-Instruct` and `NV-Embed-v1`, but neither is in the current catalog. We had to find replacements ourselves.
 - 2026-10-28 · 👎 No NVIDIA embedding model is available on Token Factory; only `Qwen/Qwen3-Embedding-8B`. An NVIDIA embedder would allow a full NVIDIA stack.
 - 2026-10-28 · ⚠️ Nemotron 3 reasoning tokens count against `max_tokens`: with a small limit, the answer comes back empty (`content=None`, `finish_reason=length`). The `enable_thinking` switch (`chat_template_kwargs`) works but is hard to find. Clearer docs would help.
+- 2026-10-28 · ⚠️ Nemotron 3 Super cites sources with full-width brackets (【1】, 【1†L3】) even when told to use [1]; we normalize them in code.
+- 2026-10-28 · 👍 Nemotron 3 Super handled a prompt-injection attempt inside retrieved context well: it described the text and refused to follow it.
+- 2026-10-28 · 👍 Qwen3-Embedding-8B on Token Factory gave recall@5 = 1.00 on our Spanish paraphrased test set; a 4096-dim vector in ~0.5 s per batch.
 - 2026-10-28 · ℹ️ `/v1/models` exposes `shutdown_date` but no model type (chat vs embedding) or context length. Adding them would make model selection easier.

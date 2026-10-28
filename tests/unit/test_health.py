@@ -3,6 +3,7 @@
 import httpx
 import respx
 from fastapi.testclient import TestClient
+from qdrant_client import AsyncQdrantClient
 
 from assistant import config
 from assistant.api.main import app
@@ -16,6 +17,9 @@ def make_client(monkeypatch, settings) -> TestClient:
     monkeypatch.setattr(config, "get_settings", lambda: settings)
     monkeypatch.setattr("assistant.api.main.get_settings", lambda: settings)
     monkeypatch.setattr("assistant.api.main.build_client", build_test_client)
+    monkeypatch.setattr(
+        "assistant.api.main.build_qdrant", lambda _s: AsyncQdrantClient(location=":memory:")
+    )
     return TestClient(app)
 
 

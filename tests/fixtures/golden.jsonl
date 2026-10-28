@@ -1,0 +1,8 @@
+{"question": "¿Cuál es mi límite de gasto para las vacaciones en Asia?", "expected": "viaje_japon.md"}
+{"question": "¿Qué días voy al fisio?", "expected": "salud.md"}
+{"question": "¿Cuándo tengo que entregar la tienda online de la ferretería?", "expected": "trabajo_proyecto_atlas.md"}
+{"question": "¿Cuánto me cuesta vivir en mi piso cada mes?", "expected": "finanzas.txt"}
+{"question": "¿Qué necesito comprar para hacer la lasaña?", "expected": "recetas.md"}
+{"question": "¿Qué ejercicios hago a mitad de semana en el gimnasio?", "expected": "gimnasio.txt"}
+{"question": "¿Cómo se llama mi idea de app de agricultura urbana?", "expected": "ideas_startup.md"}
+{"question": "¿Qué decidimos hacer para que no fallen más los despliegues?", "expected": "notas_reunion_equipo.md"}

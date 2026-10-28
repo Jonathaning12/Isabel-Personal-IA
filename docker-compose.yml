@@ -1,7 +1,7 @@
 # Local stack: API + Qdrant. Ports are bound to 127.0.0.1 only (not exposed to the network).
 services:
   qdrant:
-    image: qdrant/qdrant:v1.15.4
+    image: qdrant/qdrant:v1.20.0
     volumes:
       - qdrant_data:/qdrant/storage
     ports:

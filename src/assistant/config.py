@@ -29,9 +29,20 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     data_dir: Path = Path("./data")
 
+    # Ingestion: chunk sizes in characters (~4 chars per token → ~800 / ~120 tokens)
+    chunk_max_chars: int = Field(default=3200, gt=100)
+    chunk_overlap_chars: int = Field(default=480, ge=0)
+    max_upload_mb: int = Field(default=20, gt=0)
+
+    # Retrieval and long-term memory
+    retrieval_top_k: int = Field(default=5, gt=0)
+    retrieval_min_score: float = 0.42  # calibrated with scripts/eval_retrieval.py
+    fact_dedup_threshold: float = 0.9
+
     # API
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+    api_url: str = "http://127.0.0.1:8000"  # used by the CLI
 
     # Privacy
     log_prompts: bool = False
