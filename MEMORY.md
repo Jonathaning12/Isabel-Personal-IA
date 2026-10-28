@@ -1,7 +1,7 @@
 # MEMORY.md
 
 ## Current Phase
-Phase 3 — ✅ DONE (5/5 DoD items, adapted) on 2026-10-28 ~17:10. Session today started 16:15. Total time used so far: ~3 h of ~30 h. Next: Phase 4 (CLI polish, demo script, quick bench, README; 4 h budget), then submission.
+Phase 3 — ✅ DONE (5/5 DoD items, adapted) on 2026-10-28 16:57. Session today started 16:15. Total time used so far: ~3 h of ~30 h. Next: Phase 4 (CLI polish, demo script, quick bench, README; 4 h budget), then submission.
 
 Phase 3 DoD:
 - [x] Graph unit tests with scripted LLM: plain answer, read-only tool, approve, reject, non-"approve" = reject, two actions (run once), invalid args, unknown tool, loop guard, injection can't bypass approval, persistence across restart (11 tests). `edit` option is Stretch → not built.
