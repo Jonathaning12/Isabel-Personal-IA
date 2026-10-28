@@ -12,9 +12,12 @@ Borrador: un asistente personal de IA **privado** que conoce tus notas y documen
 | Requisito | Cómo lo cumplimos | Dónde está en el código |
 |---|---|---|
 | Inferencia en Nebius Token Factory | Todas las llamadas de chat y embeddings van a la API de Nebius (compatible con OpenAI) | `src/assistant/config.py`, `scripts/verify_models.py` |
-| Modelos open source de NVIDIA | Modelos Nemotron (chat) y NV-Embed o equivalente (embeddings), verificados contra el catálogo real | `.env` → `LLM_MODEL`, `EMBED_MODEL` |
+| Al menos un modelo open source de NVIDIA | **Nemotron 3 Super 120B** genera todas las respuestas y decisiones del agente. Para los embeddings usamos Qwen3-Embedding-8B, también en Nebius; las reglas lo permiten porque piden *al menos un* modelo NVIDIA. | `.env` → `LLM_MODEL`, `EMBED_MODEL` |
 | Privacidad y control de datos | Qdrant corre en un contenedor en tu máquina, con un volumen local. Los puertos solo escuchan en `127.0.0.1`, así que nadie en tu red puede acceder. *(Fase 2: aquí se guardarán tus documentos y recuerdos.)* | `docker-compose.yml` |
 | Sandbox de ejecución | *(Fase 3: contenedor Docker aislado)* | — |
+
+**¿Por qué es una app de terminal y no una web?**
+Porque la privacidad es el centro del proyecto: tus documentos y tu memoria se quedan en tu máquina. Una web pública significaría subir tus datos a un servidor. Además, la terminal permite mostrar claramente el flujo de aprobación antes de ejecutar código.
 
 ## Arquitectura explicada (sin jerga)
 *(Se completa en la Fase 3.)*
@@ -31,7 +34,7 @@ Todas las credenciales se leen del archivo `.env`, que Git ignora (está en `.gi
 Antes de escribir la lógica, ejecutamos `scripts/verify_models.py`. Pide a Nebius la lista real de modelos (`GET /v1/models`), comprueba que los nuestros están, hace una llamada de prueba al chat y otra a los embeddings, y verifica la dimensión del vector.
 
 **¿Por qué usáis embeddings de Qwen y no de NVIDIA?**
-Nebius Token Factory no ofrece ningún modelo de embeddings de NVIDIA; el único disponible es `Qwen/Qwen3-Embedding-8B`. Lo comprobamos con la lista real del catálogo. Así mantenemos el 100% de la inferencia en Nebius. Todo el razonamiento y las respuestas los genera **Nemotron 3 Super** de NVIDIA; Qwen solo convierte texto en vectores para buscar. Cambiar de modelo de embeddings es una línea en `.env` más reindexar.
+Nebius Token Factory no ofrece ningún modelo de embeddings de NVIDIA; el único disponible es `Qwen/Qwen3-Embedding-8B`. Lo comprobamos con la lista real del catálogo. Las reglas piden *al menos un* modelo open source de NVIDIA, y Nemotron lo cumple. Así mantenemos el 100% de la inferencia en Nebius. Todo el razonamiento y las respuestas los genera **Nemotron 3 Super** de NVIDIA; Qwen solo convierte texto en vectores para buscar. Cambiar de modelo de embeddings es una línea en `.env` más reindexar.
 
 **¿Por qué Nemotron 3 Super 120B y no el Ultra o el Nano?**
 Probamos los cuatro con tool calling y todos funcionaron. Super ofrece el mejor equilibrio entre calidad y velocidad (~2 s). Ultra es más grande y caro, y Nano razona peor. Nano queda como respaldo si hay límites de uso.

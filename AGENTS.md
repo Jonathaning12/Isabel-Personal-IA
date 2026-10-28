@@ -62,6 +62,16 @@ The architecture below describes the full vision. Under hackathon time pressure,
 | CLI `chat`, `ingest`, `memory`, `doctor` + SSE streaming | `GET /metrics`, concurrent benchmark, `mypy --strict` (Core = `ruff` + `pytest`) |
 | `.env`, secret scan, input limits, audit log | Local bearer token on the API (Core = bind to `127.0.0.1`) |
 | `PITCH.md` with demo script and judge Q&A | Polished README diagrams |
+| Submission package per `SUBMISSION.md` (license, README, release, video, feedback) | Hosted web demo on Nebius AI Cloud (only if organizers require a hosted URL) |
+
+### 2.0.1 Official hackathon rules (binding)
+
+The organizers' rules are summarized in **`SUBMISSION.md`**, which is the source of truth for submission requirements. Read it at the start of every session together with `MEMORY.md`. Key rules for engineering:
+- The app must make **runtime calls to the Nebius Token Factory inference API** and use **at least one NVIDIA open-source model** (Nemotron covers this). Non-NVIDIA models on Token Factory, such as the embedding model, are allowed.
+- It must **install and run consistently** from the public repo by following the README, and it must **work exactly as shown in the demo video**.
+- Deliverables: public repo with an **open-source `LICENSE`** file, a README with setup and a **"How we use NVIDIA & Nebius"** section, a demo/test-build URL, a **YouTube video under 3 minutes** (no copyrighted music or trademarks), a text description, and **feedback on Nebius/NVIDIA**.
+- **Feedback log:** whenever you hit friction or something works especially well with Token Factory or a Nemotron model, add a dated line to `SUBMISSION.md §6` in the same task.
+- Every third-party model, SDK, and dataset must be used within its license. Record the licenses in the README.
 
 ### 2.1 Confirmed technical decisions
 
@@ -107,6 +117,8 @@ The architecture below describes the full vision. Under hackathon time pressure,
 ├── AGENTS.md                 # this file
 ├── MEMORY.md                 # living development memory (see §3)
 ├── PITCH.md                  # Spanish: demo script, judge Q&A, AI glossary (see §6)
+├── SUBMISSION.md             # official rules, submission checklist, Nebius/NVIDIA feedback log
+├── LICENSE                   # open-source license (required by the rules)
 ├── README.md
 ├── pyproject.toml            # uv-managed
 ├── uv.lock
@@ -247,11 +259,11 @@ The architecture below describes the full vision. Under hackathon time pressure,
 ```
 
 ### 3.3 Session workflow
-1. Read `MEMORY.md` and `AGENTS.md`.
+1. Read `MEMORY.md`, `AGENTS.md`, and `SUBMISSION.md`.
 2. Restate the goal for this session and the DoD items it targets.
 3. Plan → implement in small steps → `uv run ruff check . && uv run ruff format --check . && uv run pytest -m "not live and not integration"`.
 4. Run integration tests when you touch Qdrant, sandbox, or API wiring (`docker compose up -d` first).
-5. Update `MEMORY.md`, and `PITCH.md` when a new concept or demo step was introduced.
+5. Update `MEMORY.md`, `PITCH.md` when a new concept or demo step was introduced, and `SUBMISSION.md §6` when there is Nebius/NVIDIA feedback.
 6. Report to the user **in Spanish** (§6) using the teaching block from §1 (Qué hicimos / Concepto clave / Cómo defenderlo / Cómo comprobarlo).
 
 ---
@@ -270,12 +282,14 @@ Do the phases in order. Each phase ends only when every Definition of Done (DoD)
 | Phase 2: memory + RAG | **7 h** | `assistant ingest` + a cited answer from the student's notes |
 | Phase 3: agent + sandbox + confirm | **9 h** | Agent writes code, asks for approval, runs it in the sandbox |
 | Phase 4: CLI polish + quick bench | **4 h** | Full demo script runs end to end |
-| Pitch, `PITCH.md`, demo rehearsal (×2), demo video backup | **4 h** | Student can present and answer the judge Q&A alone |
-| Buffer | **2 h** | — |
+| Pitch, `PITCH.md`, demo rehearsal (×2) | **2.5 h** | Student can present and answer the judge Q&A alone |
+| Submission: LICENSE, README NVIDIA/Nebius section, public repo, GitHub Release, YouTube video (< 3 min), form + feedback | **2.5 h** | Every row in `SUBMISSION.md §1` is ✅ |
+| Buffer | **1 h** | — |
 
 Time rules:
 - **Track elapsed time** in `MEMORY.md → Current Phase`. If a phase runs over budget by more than 50%, stop and cut scope (in this order: streaming → `doctor` checks beyond Nebius/Qdrant → fact deduplication → PDF loader). Tell the student what was cut and why.
-- **Feature freeze 8 h before the deadline.** After that, only bug fixes, `PITCH.md`, and rehearsal.
+- **Feature freeze 8 h before the deadline.** After that, only bug fixes, `PITCH.md`, submission material, and rehearsal.
+- **Submit at least 2 h before the deadline.** Submission forms and YouTube uploads can be slow.
 - **Record a backup demo video** once Phase 3 works, in case the live demo fails (Wi-Fi, Nebius rate limits).
 - Commit at every working checkpoint, so there is always a version that runs.
 - Do not debug a single issue for more than 45 minutes. Choose a simpler alternative, record it in `MEMORY.md`, and move on.
@@ -367,6 +381,7 @@ Time rules:
 - [ ] Streaming shows the first token in the CLI ≤ 1.5 s after the Nebius TTFT (no extra buffering).
 - [ ] The demo script runs start to finish without manual fixes. The README matches reality.
 - [ ] All tests pass (`unit`, `integration`; `live` run once and its result noted).
+- [ ] **Submission (see `SUBMISSION.md`):** `LICENSE` present and detected by GitHub; README has setup, prerequisites (Docker, uv, own Nebius key), model licenses, and the "How we use NVIDIA & Nebius" section; repo public with clean git history (gitleaks over all history); GitHub Release tagged; video < 3 min public on YouTube, recorded from the tagged version; description, track, and feedback entered in the form.
 
 ---
 

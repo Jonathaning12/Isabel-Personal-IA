@@ -13,17 +13,20 @@ Phase 1 DoD:
 
 ## Next Steps
 1. Student (morning): run the 3 check commands in PITCH.md "Cómo comprobarlo" and read the new glossary entries.
-2. Student: confirm with organizers (Discord) that Qwen3-Embedding-8B is acceptable for embeddings.
-3. Phase 2: add `qdrant-client`; `memory/store.py` with collection bootstrap + dimension check.
-4. Phase 2: loaders (md, txt, pdf) → sanitize → chunking → embed → upsert (sha256 idempotency).
-5. Phase 2: synthetic fixture notes (~10) + 8 golden questions; retrieval eval (recall@5 ≥ 0.75).
-6. Phase 2: `user_facts` remember/forget + API routes.
+2. Student: ask organizers whether a GitHub Release (test build) is enough as the "demo URL" for a local CLI app (SUBMISSION.md §3).
+3. Student: choose a license (MIT recommended) → add `LICENSE`.
+4. Phase 2: add `qdrant-client`; `memory/store.py` with collection bootstrap + dimension check.
+5. Phase 2: loaders (md, txt, pdf) → sanitize → chunking → embed → upsert (sha256 idempotency).
+6. Phase 2: synthetic fixture notes (~10) + 8 golden questions; retrieval eval (recall@5 ≥ 0.75).
+7. Phase 2: `user_facts` remember/forget + API routes.
 
 ## Decisions
 - 2026-10-27 · Stack: Python 3.12, uv, FastAPI, LangGraph, Qdrant (Docker), openai SDK → Nebius Token Factory · confirmed by user · —
 - 2026-10-27 · First skills: personal knowledge RAG + sandboxed code execution · confirmed by user · email/calendar, tasks/reminders deferred
 - 2026-10-27 · Interface: Typer + Rich CLI over FastAPI (SSE) · confirmed by user · Telegram, Streamlit, Open WebUI deferred
 - 2026-10-27 · Deployment: local docker-compose (api, qdrant, sandbox) · confirmed by user · Nebius VM deferred
+- 2026-10-28 · Qwen3-Embedding-8B is allowed · official rules require only "at least one NVIDIA open source model" (Nemotron covers it) · —
+- 2026-10-28 · Official rules captured in SUBMISSION.md; submission block (2.5 h) added to the time budget · rules require license, public repo, demo URL, YouTube video < 3 min, feedback · —
 - 2026-10-28 · Retries via tenacity (4 attempts, exp. backoff + jitter), SDK retries disabled (`max_retries=0`) · explicit, logged, testable · SDK built-in retries (hidden)
 - 2026-10-28 · Added `httpx` as a direct dependency (used by /health for Qdrant) · was only transitively present via dev deps, broke the Docker image · —
 - 2026-10-28 · LLM_MODEL = nvidia/nemotron-3-super-120b-a12b · quality/speed balance, native tool calling works · Ultra (cost/limits), Nano (quality; kept as fallback)
@@ -42,7 +45,8 @@ Phase 1 DoD:
 - 2026-10-28 · Nemotron 3 Super is a reasoning model: thinking tokens count against `max_tokens` (max_tokens=10 → content=None). Disable with `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` (faster, ~3 tokens for 'hola'). Content may start with '\n\n' when thinking is on → strip it. Decide per call: thinking ON for agent reasoning, OFF for cheap tasks (routing, fact extraction).
 
 ## Open Questions
-- Organizers' confirmation that a non-NVIDIA embedding model (Qwen3-Embedding-8B on Nebius) is acceptable.
+- Is a GitHub Release (test build) acceptable as the required demo URL, or is a hosted app needed? (SUBMISSION.md §3)
+- Which open-source license (MIT vs Apache-2.0)?
 
 ## Known Issues / Tech Debt
 - Logging uses stdlib `logging` (key=value format) instead of `structlog` from AGENTS.md §2.4. Good enough for the hackathon; switch only if time remains.
@@ -56,3 +60,4 @@ Phase 1 DoD:
 - 2026-10-28 · Phase 1 skeleton: uv project (Python 3.12), Settings, .env.example, .gitignore, verify_models.py · pyproject.toml, src/assistant/config.py, scripts/verify_models.py
 - 2026-10-28 · Verified catalog, chose models, updated .env/.env.example/AGENTS.md, created PITCH.md · .env.example, AGENTS.md, PITCH.md
 - 2026-10-28 · Phase 1 complete: Nebius client + retries, ChatClient (complete/stream, thinking toggle), Embedder (batched, dim check), /health, docker-compose (api+qdrant), api Dockerfile, pre-commit (ruff+gitleaks), 8 unit + 2 live tests · src/assistant/llm/*, src/assistant/api/*, docker/, docker-compose.yml, tests/*
+- 2026-10-28 · Added official hackathon rules: SUBMISSION.md (checklist, demo-URL options, description draft, feedback log); AGENTS.md §2.0.1, time budget, Phase 4 DoD · SUBMISSION.md, AGENTS.md, MEMORY.md
