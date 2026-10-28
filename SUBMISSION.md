@@ -18,7 +18,7 @@
 | R1 | Project built with the required tools and meets the project requirements | Nemotron 3 Super on Token Factory (runtime calls) | ✅ in progress |
 | R2 | **URL to a working demo, hosted app, or test build** | See §3 (decision pending) | ⬜ |
 | R3 | Text description of features and functionality | §4 draft below | ⬜ |
-| R4 | **Public** repo URL (GitHub/GitLab/Bitbucket) with all source, assets, instructions | GitHub, public before submitting | ⬜ |
+| R4 | **Public** repo URL (GitHub/GitLab/Bitbucket) with all source, assets, instructions | https://github.com/javierrpdev/ai-personal-Assistant (private for now; make public before submitting, then check the license shows in About) | 🟡 pushed, private |
 | R5 | **Open-source license file** detectable in the repo's About section | `LICENSE` (MIT) at the repo root | ✅ file added; verify on GitHub once public |
 | R6 | README with setup instructions and clear run guidance | `README.md` quickstart, tested on a clean clone | 🟡 basic version exists |
 | R7 | README **highlights NVIDIA Nemotron usage**, **where Token Factory accelerated the workflow**, and any other Nebius tools | Dedicated README section (§5 below) | ⬜ |

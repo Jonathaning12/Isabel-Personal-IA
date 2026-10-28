@@ -66,6 +66,7 @@ Phase 3 DoD:
 - 2026-10-28 · Nemotron 3 Super is a reasoning model: thinking tokens count against `max_tokens` (max_tokens=10 → content=None). Disable with `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` (faster, ~3 tokens for 'hola'). Content may start with '\n\n' when thinking is on → strip it. Decide per call: thinking ON for agent reasoning, OFF for cheap tasks (routing, fact extraction).
 
 ## Open Questions
+- (none blocking) Repo: https://github.com/javierrpdev/ai-personal-Assistant — private until submission.
 - Is a GitHub Release (test build) acceptable as the required demo URL, or is a hosted app needed? (SUBMISSION.md §3)
 
 ## Known Issues / Tech Debt
@@ -86,3 +87,4 @@ Phase 3 DoD:
 - 2026-10-28 · Added official hackathon rules: SUBMISSION.md (checklist, demo-URL options, description draft, feedback log); AGENTS.md §2.0.1, time budget, Phase 4 DoD · SUBMISSION.md, AGENTS.md, MEMORY.md
 - 2026-10-28 · Phase 2 complete: sanitize, loaders (md/txt/pdf), chunking, MemoryStore (Qdrant), Ingestor (idempotent), Retriever, FactMemory, RAG answer with citations, memory API routes, Typer CLI (ingest/ask/search/remember/memory), fixtures + eval script, 38 unit + 3 integration tests, MIT LICENSE · src/assistant/{guardrails,ingest,memory,agent,cli}/*, src/assistant/api/routes/memory.py, scripts/eval_retrieval.py, tests/*
 - 2026-10-28 · Phase 3 complete: Docker sandbox (runner + image), tool registry + executor, LangGraph agent with approval interrupts, audit log, SQLite checkpoints, /chat + /confirm, `assistant chat` with approval panels, query-embedding cache, 50 unit + 12 integration tests · src/assistant/{agent,tools,sandbox,guardrails}/*, src/assistant/api/routes/chat.py, src/assistant/cli/*, docker/sandbox.Dockerfile, docker-compose.yml, tests/*
+- 2026-10-28 · Repo pushed to GitHub (private): https://github.com/javierrpdev/ai-personal-Assistant · SUBMISSION.md, MEMORY.md
