@@ -355,6 +355,8 @@ Time rules:
 - Checkpointer: `AsyncSqliteSaver` at `data/checkpoints.sqlite`, so threads survive API restarts.
 - Episode summarization when a thread ends or goes idle (more than N turns), stored in `episodes`.
 
+> **As built (2026-10-28):** no `router` node (always retrieve, Nemotron picks tools); no `read_file`, `episodes` or background fact extraction; confirmations are approve/reject (no `edit`); a new message on a thread with a pending action returns 409 instead of a time-based expiry; if every action in a step is rejected, the turn ends with a fixed reply. See `MEMORY.md → Decisions`.
+
 **Definition of Done**
 - [ ] Graph unit tests with a fake LLM cover each route, the loop guard, and confirm/approve/reject/edit paths.
 - [ ] No side-effect tool can run without an `approve` (a test asserts that the sandbox runner is never called on `reject` or when no confirmation arrives).

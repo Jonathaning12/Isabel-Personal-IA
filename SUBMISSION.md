@@ -59,4 +59,6 @@ Write down real friction and praise as it happens. Facts only, with dates.
 - 2026-10-28 · ⚠️ Nemotron 3 Super cites sources with full-width brackets (【1】, 【1†L3】) even when told to use [1]; we normalize them in code.
 - 2026-10-28 · 👍 Nemotron 3 Super handled a prompt-injection attempt inside retrieved context well: it described the text and refused to follow it.
 - 2026-10-28 · 👍 Qwen3-Embedding-8B on Token Factory gave recall@5 = 1.00 on our Spanish paraphrased test set; a 4096-dim vector in ~0.5 s per batch.
+- 2026-10-28 · 👎 Embedding latency on Token Factory was highly variable in the afternoon/evening (UTC+1) of 2026-10-28: single-text `Qwen/Qwen3-Embedding-8B` requests took 1–26 s (median ~8 s), versus < 1 s the night before. Chat completions on Nemotron 3 Super stayed fast (1–2 s) at the same time. We added a query-embedding cache to soften it; a status page or published latency SLOs per model would help.
+- 2026-10-28 · 👍 Nemotron 3 Super tool calling in an agent loop was reliable: correct tool choice for code, memory and chat, valid JSON arguments, and it respected rejected actions.
 - 2026-10-28 · ℹ️ `/v1/models` exposes `shutdown_date` but no model type (chat vs embedding) or context length. Adding them would make model selection easier.

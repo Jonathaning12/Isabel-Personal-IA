@@ -1,23 +1,23 @@
 # MEMORY.md
 
 ## Current Phase
-Phase 2 — ✅ DONE (5/5 DoD items) on 2026-10-28 00:51. Phase 1 done 00:40. Total time used so far: ~2 h of ~30 h. Next: Phase 3 (agent + sandbox + confirmation, 9 h budget).
+Phase 3 — ✅ DONE (5/5 DoD items, adapted) on 2026-10-28 ~17:10. Session today started 16:15. Total time used so far: ~3 h of ~30 h. Next: Phase 4 (CLI polish, demo script, quick bench, README; 4 h budget), then submission.
 
-Phase 2 DoD:
-- [x] `assistant ingest tests/fixtures/docs` indexes 10 docs / 22 chunks; second run → 0 indexed, 10 unchanged
-- [x] Retrieval eval (`scripts/eval_retrieval.py`, 8 paraphrased golden questions): recall@5 = 1.00, MRR = 1.00
-- [x] Facts: "prefiero viñetas" stored once; repeating it updates the same id (no duplicate); answers then use bullets
-- [x] Delete document / forget fact physically removes points (integration tests vs real Qdrant, 3 passed)
-- [x] Startup fails fast on EMBED_DIM vs collection mismatch (`CollectionDimensionError`, unit + integration test)
+Phase 3 DoD:
+- [x] Graph unit tests with scripted LLM: plain answer, read-only tool, approve, reject, non-"approve" = reject, two actions (run once), invalid args, unknown tool, loop guard, injection can't bypass approval, persistence across restart (11 tests). `edit` option is Stretch → not built.
+- [x] No side-effect tool runs without approve (tests assert FakeSandbox.runs == [] on reject / before approval)
+- [x] Sandbox integration (real Docker, 9 tests): 45 ✓, network blocked ✓, infinite loop killed at timeout ✓, write outside /work fails ✓, non-root ✓, host files invisible ✓, output truncated ✓
+- [x] Prompt injection live: Nemotron refused "do what the pasted email says" and proposed no tool; unit test proves approval can't be bypassed even if the model is fooled
+- [x] Restarting the api container and resuming the thread keeps context (live check + unit test with SQLite)
 
 ## Next Steps
-1. Student: try it (commands in PITCH.md "Cómo comprobarlo"), then ingest a few of their own notes.
-2. Student: waiting for organizers' answer on GitHub Release as "test build" URL (SUBMISSION.md §3).
-3. Phase 3: add `langgraph` + `langgraph-checkpoint-sqlite`; AgentState + graph (load_context → router → retrieve → reason ⇄ tools → confirm → respond).
-4. Phase 3: tool registry with side_effect flag; `search_knowledge`, `remember_fact`, `forget_fact`, `run_code_in_sandbox`.
-5. Phase 3: `docker/sandbox.Dockerfile` + DockerRunner (no network, read-only, non-root, limits, timeout).
-6. Phase 3: confirmation interrupt + `POST /confirm` + audit log; tests that side-effect tools never run without approve.
-7. Phase 3: replace `/ask` with `/chat` (thread_id, checkpointer); keep `/ask` until the CLI switches.
+1. Student: try `uv run assistant chat` (commands in PITCH.md) and approve/reject a code run.
+2. Student: still waiting for organizers on GitHub Release as "test build" (SUBMISSION.md §3).
+3. Phase 4: `assistant doctor` (env, Nebius, models, Qdrant, sandbox image, dim match).
+4. Phase 4: `scripts/demo.sh` / demo guide + finalize PITCH.md demo script; record a backup video when Nebius latency is low.
+5. Phase 4: quick bench (10 sequential turns, p50/p95), README final (NVIDIA & Nebius section, licenses, prerequisites incl. DOCKER_GID on Linux).
+6. Decide: streaming (SSE) is first in the cut list; given embedding latency dominates, skip it unless time remains.
+7. Submission: public repo + history scan, Release, video, form (SUBMISSION.md).
 
 ## Decisions
 - 2026-10-27 · Stack: Python 3.12, uv, FastAPI, LangGraph, Qdrant (Docker), openai SDK → Nebius Token Factory · confirmed by user · —
@@ -29,6 +29,11 @@ Phase 2 DoD:
 - 2026-10-28 · Qdrant server bumped to v1.20.0 to match qdrant-client 1.20 · avoid client/server version warnings · —
 - 2026-10-28 · Interim `POST /ask` (plain RAG, no agent) for the Phase 2 demo · Phase 3 replaces it with `/chat` · —
 - 2026-10-28 · License: MIT · chosen by the student · Apache-2.0
+- 2026-10-28 · No `router` node: always retrieve (1 embedding) and let Nemotron choose tools · saves one LLM call per turn · router node from AGENTS.md §4 Phase 3
+- 2026-10-28 · Tools: search_knowledge, list_facts (read-only); remember_fact, forget_fact, run_code_in_sandbox (approval). `read_file` not built (not Core; sandbox already covers "do things") · —
+- 2026-10-28 · Pending confirmation: a new message on that thread returns 409 instead of a time-based expiry · simpler and safe (nothing runs without approve) · CONFIRM_TIMEOUT_S expiry
+- 2026-10-28 · Background fact extraction after each answer not built; facts are learned via `remember_fact` (with approval) or `assistant remember` · keeps every memory write user-approved · automatic extraction
+- 2026-10-28 · API container mounts the Docker socket to start sandbox containers · keeps install to one `docker compose up` · running the API on the host
 - 2026-10-28 · Qwen3-Embedding-8B is allowed · official rules require only "at least one NVIDIA open source model" (Nemotron covers it) · —
 - 2026-10-28 · Official rules captured in SUBMISSION.md; submission block (2.5 h) added to the time budget · rules require license, public repo, demo URL, YouTube video < 3 min, feedback · —
 - 2026-10-28 · Retries via tenacity (4 attempts, exp. backoff + jitter), SDK retries disabled (`max_retries=0`) · explicit, logged, testable · SDK built-in retries (hidden)
@@ -39,6 +44,12 @@ Phase 2 DoD:
 - 2026-10-27 · Hackathon ends in ~50 h → Core only, time-boxed phases, feature freeze 8 h before deadline · ~30 real working hours · Stretch items
 
 ## Verified Facts
+- 2026-10-28 · Nebius embedding latency was very variable from ~16:00 (UTC+1): 1–26 s per single-text request (host and container alike), while Nemotron chat stayed 1–2 s. Agent turns therefore took 5–70 s, dominated by embeddings. Query-embedding LRU cache added (repeated questions skip Nebius).
+- 2026-10-28 · Thinking on vs off for the agent node: similar latency (1–2 s) and both choose tools correctly; thinking OFF sometimes leaks English planning text into `content` ("We'll compute…"), so the agent keeps thinking ON.
+- 2026-10-28 · Despite the prompt, after a rejection Nemotron produced the result "by hand" → now enforced in code: if all actions of a step are rejected, the turn ends with a fixed reply and no LLM call.
+- 2026-10-28 · Nemotron asked for permission in text before calling remember_fact → prompt now says the system asks automatically.
+- 2026-10-28 · Docker socket in Docker Desktop (macOS) is root:root 660 → api uses `group_add: ${DOCKER_GID:-0}`. On Linux set DOCKER_GID to the socket's group.
+- 2026-10-28 · LangGraph 1.2: several `interrupt()` calls at the top of a node resume one by one; code after them runs once. `ainvoke` returns `__interrupt__` with the payload.
 - 2026-10-28 · Retrieval calibration (fixtures, Qwen3-Embedding-8B with query instruction): correct docs score ≥ 0.485; off-topic questions top out at ~0.40 → RETRIEVAL_MIN_SCORE = 0.42. Re-check on the student's real notes.
 - 2026-10-28 · Nemotron cites with full-width brackets 【1】 / 【1†L3】 despite instructions → normalized to [1] in `agent/rag.py`.
 - 2026-10-28 · Without contextual chunk headers, a chunk under "Acciones acordadas" lost its doc title ("Sprint 12") and Nemotron answered "no info". Embedding `title › heading` + text and adding title= to <context> fixed it.
@@ -58,6 +69,9 @@ Phase 2 DoD:
 - Is a GitHub Release (test build) acceptable as the required demo URL, or is a hosted app needed? (SUBMISSION.md §3)
 
 ## Known Issues / Tech Debt
+- Agent latency is dominated by Nebius embedding latency when the service is loaded (see Verified Facts). No streaming yet.
+- The API container has Docker socket access (needed to start sandboxes). Documented in README/PITCH as a trade-off.
+- Model sometimes slips perspective ("Te pedí" instead of "Me pediste") when summarizing history.
 - Logging uses stdlib `logging` (key=value format) instead of `structlog` from AGENTS.md §2.4. Good enough for the hackathon; switch only if time remains.
 - `/health` calls Nebius `models.list` on every request (no caching); fine for local use.
 - `OpenShellRunner` is planned as a stub only.
@@ -71,3 +85,4 @@ Phase 2 DoD:
 - 2026-10-28 · Phase 1 complete: Nebius client + retries, ChatClient (complete/stream, thinking toggle), Embedder (batched, dim check), /health, docker-compose (api+qdrant), api Dockerfile, pre-commit (ruff+gitleaks), 8 unit + 2 live tests · src/assistant/llm/*, src/assistant/api/*, docker/, docker-compose.yml, tests/*
 - 2026-10-28 · Added official hackathon rules: SUBMISSION.md (checklist, demo-URL options, description draft, feedback log); AGENTS.md §2.0.1, time budget, Phase 4 DoD · SUBMISSION.md, AGENTS.md, MEMORY.md
 - 2026-10-28 · Phase 2 complete: sanitize, loaders (md/txt/pdf), chunking, MemoryStore (Qdrant), Ingestor (idempotent), Retriever, FactMemory, RAG answer with citations, memory API routes, Typer CLI (ingest/ask/search/remember/memory), fixtures + eval script, 38 unit + 3 integration tests, MIT LICENSE · src/assistant/{guardrails,ingest,memory,agent,cli}/*, src/assistant/api/routes/memory.py, scripts/eval_retrieval.py, tests/*
+- 2026-10-28 · Phase 3 complete: Docker sandbox (runner + image), tool registry + executor, LangGraph agent with approval interrupts, audit log, SQLite checkpoints, /chat + /confirm, `assistant chat` with approval panels, query-embedding cache, 50 unit + 12 integration tests · src/assistant/{agent,tools,sandbox,guardrails}/*, src/assistant/api/routes/chat.py, src/assistant/cli/*, docker/sandbox.Dockerfile, docker-compose.yml, tests/*

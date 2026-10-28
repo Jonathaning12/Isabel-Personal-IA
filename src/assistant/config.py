@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     retrieval_min_score: float = 0.42  # calibrated with scripts/eval_retrieval.py
     fact_dedup_threshold: float = 0.9
 
+    # Agent
+    max_agent_iterations: int = Field(default=6, gt=0)
+
+    # Sandbox (isolated Docker container for code written by the agent)
+    sandbox_image: str = "assistant-sandbox:latest"
+    sandbox_timeout_s: int = Field(default=30, gt=0)
+    sandbox_memory: str = "512m"
+    sandbox_cpus: float = Field(default=1.0, gt=0)
+    sandbox_max_output_bytes: int = Field(default=65536, gt=0)
+
     # API
     api_host: str = "127.0.0.1"
     api_port: int = 8000

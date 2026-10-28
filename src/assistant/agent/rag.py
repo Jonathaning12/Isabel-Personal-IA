@@ -16,11 +16,12 @@ from assistant.memory.facts import FactMemory, SupportsComplete
 from assistant.memory.retrieval import Citation, Retriever
 
 FULLWIDTH_CITATION = re.compile(r"【\s*(\d+)\s*(?:†[^】]*)?】")
+FULLWIDTH_OTHER = re.compile(r"\s*【[^】]*】")
 
 
 def normalize_citations(answer: str) -> str:
-    """Nemotron sometimes cites as 【1】; normalize to [1]."""
-    return FULLWIDTH_CITATION.sub(r"[\1]", answer)
+    """Nemotron sometimes cites as 【1】 → [1]; non-numeric 【notes】 are dropped."""
+    return FULLWIDTH_OTHER.sub("", FULLWIDTH_CITATION.sub(r"[\1]", answer))
 
 
 @dataclass

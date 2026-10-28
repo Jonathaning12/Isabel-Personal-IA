@@ -13,6 +13,16 @@ services:
       timeout: 3s
       retries: 10
 
+  # Builds the sandbox image used to run agent-written code, then exits.
+  # The API starts a fresh, locked-down container from this image for every run.
+  sandbox:
+    build:
+      context: .
+      dockerfile: docker/sandbox.Dockerfile
+    image: assistant-sandbox:latest
+    command: ["python", "-c", "print('sandbox image ready')"]
+    network_mode: none
+
   api:
     build:
       context: .
@@ -21,11 +31,23 @@ services:
     environment:
       # Inside Docker, Qdrant is reached by its service name, not localhost.
       QDRANT_URL: http://qdrant:6333
+      DATA_DIR: /app/data
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      # Conversations (checkpoints.sqlite) and the audit log stay on your disk.
+      - ./data:/app/data
+      # The API needs Docker to start sandbox containers. This gives the API (trusted code)
+      # control of Docker; the agent-written code runs in the sandbox, which gets nothing.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Lets the non-root API user use the Docker socket (macOS: 0; Linux: see .env.example).
+    group_add:
+      - "${DOCKER_GID:-0}"
     depends_on:
       qdrant:
         condition: service_healthy
+      sandbox:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s

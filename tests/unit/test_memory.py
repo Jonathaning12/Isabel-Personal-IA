@@ -115,3 +115,13 @@ def test_fullwidth_citations_are_normalized():
     assert (
         normalize_citations("Son 14 días【1】 y 2.400 €【2†L3】.") == "Son 14 días[1] y 2.400 €[2]."
     )
+
+
+async def test_repeated_query_embedding_is_cached(store, fake_embedder, settings):
+    retriever = Retriever(store, fake_embedder, settings)
+
+    first = await retriever.embed_query("¿Cuánto cuesta el viaje?")
+    second = await retriever.embed_query("  ¿Cuánto cuesta el viaje?  ")
+
+    assert first == second
+    assert fake_embedder.calls == 1

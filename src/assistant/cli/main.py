@@ -1,17 +1,23 @@
 """Terminal interface (Typer + Rich). It talks to the local FastAPI backend over HTTP.
 
-Commands: ingest, ask, search, remember, memory (facts / docs / forget / delete-doc).
+Commands: chat, ingest, ask, search, remember, memory (facts / docs / forget / delete-doc).
 """
 
 import os
+import re
+import uuid
 from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
 import typer
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 
 from assistant.cli import messages as msg
 from assistant.ingest.loaders import SUPPORTED_EXTENSIONS
@@ -185,3 +191,97 @@ def delete_doc(
     """Elimina un documento y todos sus fragmentos de la memoria."""
     result = _request("DELETE", "/documents", params={"source_path": source_path})
     console.print(msg.DOCUMENT_DELETED.format(path=source_path, chunks=result["removed_chunks"]))
+
+
+# --- chat with the agent -----------------------------------------------------
+
+
+def _confirm(pending: dict) -> str:
+    """Show exactly what the agent wants to do and ask the user. Returns approve/reject."""
+    tool, args = pending["tool"], pending["args"]
+    title = msg.CONFIRM_TITLES.get(tool, tool)
+    if tool == "run_code_in_sandbox":
+        body: Any = Group(
+            Text(args.get("explanation") or "", style="bold"),
+            Syntax(args["code"], "python", line_numbers=True, word_wrap=True),
+            Text(msg.CONFIRM_LIMITS.format(**pending["limits"]), style="dim"),
+        )
+    elif tool == "remember_fact":
+        body = Text(args["fact"])
+    else:
+        body = Text(str(args))
+    console.print(Panel(body, title=title, border_style="yellow"))
+    choice = Prompt.ask(msg.CONFIRM_QUESTION, choices=["a", "r"], show_choices=False)
+    console.print(msg.APPROVED if choice == "a" else msg.REJECTED)
+    return "approve" if choice == "a" else "reject"
+
+
+def _print_actions(actions: list[dict]) -> None:
+    for action in actions:
+        result = action["result"]
+        if action["decision"] == "reject":
+            continue  # already reported when the user rejected it
+        if action["tool"] == "run_code_in_sandbox" and "exit_code" in result:
+            output = (result["stdout"] or "") + (result["stderr"] if result["exit_code"] else "")
+            title = (
+                msg.SANDBOX_TIMEOUT
+                if result["timed_out"]
+                else msg.SANDBOX_OUTPUT.format(
+                    exit_code=result["exit_code"], seconds=result["duration_ms"] / 1000
+                )
+            )
+            style = "green" if result["exit_code"] == 0 else "red"
+            console.print(Panel(output.rstrip() or "(sin salida)", title=title, border_style=style))
+        elif action["tool"] == "remember_fact" and result.get("status") == "saved":
+            console.print(msg.FACT_SAVED.format(fact=result["fact"]))
+        elif action["tool"] == "forget_fact" and result.get("status") == "deleted":
+            console.print(msg.FACT_DELETED)
+
+
+def _cited(answer: str, citations: list[dict]) -> list[dict]:
+    """Only the sources the answer actually cites, e.g. [1] or [3]."""
+    numbers = {int(n) for n in re.findall(r"\[(\d+)\]", answer)}
+    return [c for c in citations if c["n"] in numbers]
+
+
+def _chat_turn(thread_id: str, message: str) -> None:
+    with console.status(msg.CHAT_THINKING):
+        result = _request(
+            "POST", "/chat", json={"message": message, "thread_id": thread_id}, timeout=300
+        )
+    while result["status"] == "confirm_required":
+        decision = _confirm(result["pending"])
+        with console.status(msg.CHAT_THINKING):
+            result = _request(
+                "POST", f"/chat/{thread_id}/confirm", json={"decision": decision}, timeout=300
+            )
+    _print_actions(result["actions"])
+    console.print(Markdown(result["answer"]))
+    sources = _cited(result["answer"], result["citations"])
+    if sources:
+        _print_sources(sources)
+
+
+@app.command()
+def chat(
+    thread: Annotated[str | None, typer.Option(help="id de una conversación anterior")] = None,
+) -> None:
+    """Conversa con el agente: busca en tus notas, recuerda y ejecuta código (con permiso)."""
+    thread_id = thread or uuid.uuid4().hex[:12]
+    console.print(Panel(msg.CHAT_WELCOME.format(thread=thread_id), border_style="cyan"))
+    while True:
+        try:
+            message = Prompt.ask(msg.CHAT_PROMPT).strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if message.lower() in {"/salir", "salir", "exit", "quit"}:
+            break
+        if not message:
+            continue
+        try:
+            _chat_turn(thread_id, message)
+        except typer.Exit:
+            continue  # the error was already printed; keep the conversation going
+        except httpx.TimeoutException:
+            console.print(msg.CHAT_TIMEOUT)
+    console.print(msg.CHAT_RESUME.format(thread=thread_id))

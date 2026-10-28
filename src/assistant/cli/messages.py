@@ -28,3 +28,29 @@ NO_FACTS = "[dim]Todavía no recuerdo nada sobre ti.[/]"
 FACT_FORGOTTEN = "[green]✔ Olvidado:[/] {id}"
 NO_DOCUMENTS = "[dim]Todavía no hay documentos indexados.[/]"
 DOCUMENT_DELETED = "[green]✔ Documento eliminado:[/] {path} ({chunks} fragmentos)"
+
+# --- chat ---------------------------------------------------------------------
+CHAT_WELCOME = (
+    "[bold]Asistente personal[/] · Nemotron 3 Super en Nebius · memoria local\n"
+    "[dim]Conversación {thread} · escribe [bold]/salir[/] para terminar[/]"
+)
+CHAT_RESUME = "[dim]Para retomarla: assistant chat --thread {thread}[/]"
+CHAT_PROMPT = "[bold cyan]Tú[/]"
+CHAT_THINKING = "Pensando…"
+CHAT_TIMEOUT = "[red]✘ La respuesta tardó demasiado. Inténtalo de nuevo.[/]"
+CONFIRM_TITLES = {
+    "run_code_in_sandbox": "⚠️  El asistente quiere ejecutar este código",
+    "remember_fact": "⚠️  El asistente quiere guardar esto en tu memoria",
+    "forget_fact": "⚠️  El asistente quiere borrar este recuerdo",
+}
+CONFIRM_LIMITS = (
+    "Sandbox aislado · sin internet · sin acceso a tus archivos · "
+    "memoria {memory} · {cpus} CPU · máx. {timeout_s} s"
+)
+CONFIRM_QUESTION = "¿Lo apruebas? [bold]a[/]probar / [bold]r[/]echazar"
+APPROVED = "[green]✔ Aprobado[/]"
+REJECTED = "[yellow]✘ Rechazado: no se ejecutó nada[/]"
+SANDBOX_OUTPUT = "Salida del sandbox · código {exit_code} · {seconds:.1f} s"
+SANDBOX_TIMEOUT = "Salida del sandbox · ⏱ cortado por tiempo"
+FACT_SAVED = "[green]✔ Guardado en memoria:[/] {fact}"
+FACT_DELETED = "[green]✔ Recuerdo borrado[/]"

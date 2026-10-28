@@ -5,6 +5,7 @@ Qwen3-Embedding works best when *queries* carry a short task instruction while
 *documents* are embedded as-is (asymmetric retrieval), so we add one here.
 """
 
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from assistant.config import Settings
@@ -28,14 +29,27 @@ class Citation:
     suspicious: bool
 
 
+QUERY_CACHE_SIZE = 256
+
+
 class Retriever:
     def __init__(self, store: MemoryStore, embedder: SupportsEmbed, settings: Settings):
         self._store = store
         self._embedder = embedder
         self._settings = settings
+        # Query embeddings are cached in memory: a repeated question skips the Nebius call.
+        self._cache: OrderedDict[str, list[float]] = OrderedDict()
 
     async def embed_query(self, query: str) -> list[float]:
-        return (await self._embedder.embed([QUERY_INSTRUCTION + query]))[0]
+        key = query.strip()
+        if key in self._cache:
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        vector = (await self._embedder.embed([QUERY_INSTRUCTION + key]))[0]
+        self._cache[key] = vector
+        if len(self._cache) > QUERY_CACHE_SIZE:
+            self._cache.popitem(last=False)
+        return vector
 
     async def search(self, query: str, *, k: int | None = None) -> list[Citation]:
         return await self.search_by_vector(await self.embed_query(query), k=k)
