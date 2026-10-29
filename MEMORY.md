@@ -12,6 +12,7 @@ Phase 4 DoD (adapted):
 - [ ] Submission items → see SUBMISSION.md §1 (R2, R4 public, R8 video, R10 feedback in form).
 
 ## Next Steps
+0. (done 2026-10-28 ~18:45) Reusable skills feature.
 1. Student: rehearse the demo with PITCH.md "Guion del vídeo"; record the video (< 3 min, YouTube, no copyrighted music) when Nebius latency is low.
 2. Student: decide video language (Spanish narration vs English); judges' forms are likely English → English subtitles or narration recommended.
 3. Organizers' answer on demo URL (SUBMISSION.md §3). Default plan: GitHub Release `v1.0.0` as "test build".
@@ -30,6 +31,8 @@ Phase 4 DoD (adapted):
 - 2026-10-28 · Qdrant server bumped to v1.20.0 to match qdrant-client 1.20 · avoid client/server version warnings · —
 - 2026-10-28 · Interim `POST /ask` (plain RAG, no agent) for the Phase 2 demo · Phase 3 replaces it with `/chat` · —
 - 2026-10-28 · License: MIT · chosen by the student · Apache-2.0
+- 2026-10-28 · Reusable skills (data/skills.json, JSON params injection, approval-gated, sandboxed) · Personal AI track wording asks for "reusable skills" · —
+- 2026-10-28 · Approvals bound to a SHA-256 fingerprint of the payload shown (API computes it from the stored interrupt) · a test showed that a skill edited between approval request and resume would have run unseen code (TOCTOU) · plain "approve" strings
 - 2026-10-28 · No SSE streaming in Phase 4 · first in the cut list; generation is ~1–2 s, embeddings dominate · —
 - 2026-10-28 · Demo warm-up via `/memory/search` in `scripts/demo_setup.sh` · fills the query-embedding cache so the recorded demo is fast; it is a real feature, explained in PITCH.md · —
 - 2026-10-28 · No `router` node: always retrieve (1 embedding) and let Nemotron choose tools · saves one LLM call per turn · router node from AGENTS.md §4 Phase 3
@@ -47,6 +50,7 @@ Phase 4 DoD (adapted):
 - 2026-10-27 · Hackathon ends in ~50 h → Core only, time-boxed phases, feature freeze 8 h before deadline · ~30 real working hours · Stretch items
 
 ## Verified Facts
+- 2026-10-28 · Live skills test: Nemotron generalized the code to read `params`, saved it, and reused it in a new thread via run_skill. Its code used floor division (10000 // 450 = 22, real answer 23): AI code can be wrong → shown before approval. Demo numbers should divide exactly (6000/300, 9000/450).
 - 2026-10-28 · Official deadline (Devpost rules): **Oct 30, 2026 10:00 PDT = Fri 11:00 CST (student's TZ, UTC-6)**; ~40 h left at 18:18 CST Oct 28. Judging Dec 1–15. Criteria (equal weight): Technological Implementation, Design, Potential Impact, Quality of the Idea. Track wording: "memory, reusable skills, user-controlled tools".
 - 2026-10-28 · Model licenses (Hugging Face model cards): Nemotron 3 Super = NVIDIA Nemotron Open Model License (commercial use allowed); Qwen3-Embedding-8B = Apache-2.0.
 - 2026-10-28 · Bench 18:05: cached question ~0.9–1.0 s end to end → everything except the embedding call takes ~1 s.
@@ -98,3 +102,4 @@ Phase 4 DoD (adapted):
 - 2026-10-28 · Repo pushed to GitHub (private): https://github.com/javierrpdev/ai-personal-Assistant · SUBMISSION.md, MEMORY.md
 - 2026-10-28 · Robustness fixes after student testing: fast-fail query embeddings, graceful degradation, JSON 503 handler, resilient CLI chat loop, previous-sources memory; 53 unit tests · src/assistant/{agent,llm,memory,api,cli}/*, tests/unit/test_agent.py
 - 2026-10-28 · Phase 4: `assistant doctor`, scripts/bench.py, scripts/demo_setup.sh, final README (NVIDIA & Nebius, architecture, privacy, licenses), video script in PITCH.md, final description in SUBMISSION.md · src/assistant/cli/doctor.py, scripts/*, README.md, PITCH.md, SUBMISSION.md, AGENTS.md
+- 2026-10-28 · Reusable skills: SkillStore, save/list/run/delete tools, CLI `skills` + approval panels, API /skills, fingerprint-bound approvals (stale actions never run), 69 unit tests · src/assistant/skills/*, tools/*, agent/*, api/routes/{chat,skills}.py, cli/*, tests/unit/{test_skills,test_agent}.py

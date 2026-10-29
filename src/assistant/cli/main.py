@@ -1,6 +1,7 @@
 """Terminal interface (Typer + Rich). It talks to the local FastAPI backend over HTTP.
 
-Commands: chat, ingest, ask, search, remember, memory (facts / docs / forget / delete-doc), doctor.
+Commands: chat, ingest, ask, search, remember, memory (facts / docs / forget / delete-doc),
+skills (list / show / delete), doctor.
 """
 
 import os
@@ -25,6 +26,10 @@ from assistant.ingest.loaders import SUPPORTED_EXTENSIONS
 app = typer.Typer(help="Asistente personal de IA privado.", no_args_is_help=True)
 memory_app = typer.Typer(help="Ver y gestionar la memoria del asistente.", no_args_is_help=True)
 app.add_typer(memory_app, name="memory")
+skills_app = typer.Typer(
+    help="Tus skills reutilizables (programas guardados).", no_args_is_help=True
+)
+app.add_typer(skills_app, name="skills")
 console = Console()
 
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
@@ -212,6 +217,22 @@ def _confirm(pending: dict) -> str:
             Syntax(args["code"], "python", line_numbers=True, word_wrap=True),
             Text(msg.CONFIRM_LIMITS.format(**pending["limits"]), style="dim"),
         )
+    elif tool == "run_skill":
+        params = ", ".join(f"{k}={v!r}" for k, v in args["params"].items()) or "—"
+        body = Group(
+            Text(f"Skill «{args['name']}»: {pending.get('description', '')}", style="bold"),
+            Text(msg.CONFIRM_PARAMS.format(params=params)),
+            Syntax(pending["program"], "python", line_numbers=True, word_wrap=True),
+            Text(msg.CONFIRM_LIMITS.format(**pending["limits"]), style="dim"),
+        )
+    elif tool == "save_skill":
+        body = Group(
+            Text(f"«{args['name']}»: {args['description']}", style="bold"),
+            Text(msg.CONFIRM_PARAMS.format(params=", ".join(args["parameters"]) or "—")),
+            Syntax(args["code"], "python", line_numbers=True, word_wrap=True),
+        )
+    elif tool == "delete_skill":
+        body = Text(f"Skill «{args['name']}»")
     elif tool == "remember_fact":
         body = Text(args["fact"])
     else:
@@ -227,7 +248,9 @@ def _print_actions(actions: list[dict]) -> None:
         result = action["result"]
         if action["decision"] == "reject":
             continue  # already reported when the user rejected it
-        if action["tool"] == "run_code_in_sandbox" and "exit_code" in result:
+        if action["decision"] == "stale":
+            console.print(msg.ACTION_STALE)
+        elif action["tool"] in ("run_code_in_sandbox", "run_skill") and "exit_code" in result:
             output = (result["stdout"] or "") + (result["stderr"] if result["exit_code"] else "")
             title = (
                 msg.SANDBOX_TIMEOUT
@@ -242,6 +265,10 @@ def _print_actions(actions: list[dict]) -> None:
             console.print(msg.FACT_SAVED.format(fact=result["fact"]))
         elif action["tool"] == "forget_fact" and result.get("status") == "deleted":
             console.print(msg.FACT_DELETED)
+        elif action["tool"] == "save_skill" and result.get("status") in ("saved", "updated"):
+            console.print(msg.SKILL_SAVED.format(name=result["name"]))
+        elif action["tool"] == "delete_skill" and result.get("status") == "deleted":
+            console.print(msg.SKILL_DELETED.format(name=action["args"]["name"]))
 
 
 def _cited(answer: str, citations: list[dict]) -> list[dict]:
@@ -305,3 +332,46 @@ def doctor() -> None:
     else:
         console.print(msg.DOCTOR_FAIL)
         raise typer.Exit(1)
+
+
+@skills_app.command("list")
+def skills_list() -> None:
+    """Lista tus skills guardadas."""
+    skills = _request("GET", "/skills")["skills"]
+    if not skills:
+        console.print(msg.NO_SKILLS)
+        return
+    table = Table(title="Tus skills")
+    table.add_column("Nombre")
+    table.add_column("Qué hace")
+    table.add_column("Parámetros")
+    table.add_column("Usos", justify="right")
+    for s in skills:
+        table.add_row(
+            s["name"], s["description"], ", ".join(s["parameters"]) or "—", str(s["runs"])
+        )
+    console.print(table)
+
+
+@skills_app.command("show")
+def skills_show(name: Annotated[str, typer.Argument(help="Nombre de la skill")]) -> None:
+    """Muestra el código de una skill."""
+    s = _request("GET", f"/skills/{name}")
+    console.print(
+        Panel(
+            Group(
+                Text(s["description"], style="bold"),
+                Text(msg.CONFIRM_PARAMS.format(params=", ".join(s["parameters"]) or "—")),
+                Syntax(s["code"], "python", line_numbers=True, word_wrap=True),
+            ),
+            title=f"Skill «{s['name']}»",
+            border_style="cyan",
+        )
+    )
+
+
+@skills_app.command("delete")
+def skills_delete(name: Annotated[str, typer.Argument(help="Nombre de la skill")]) -> None:
+    """Borra una skill."""
+    _request("DELETE", f"/skills/{name}")
+    console.print(msg.SKILL_DELETED.format(name=name))

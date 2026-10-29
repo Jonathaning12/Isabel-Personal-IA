@@ -11,7 +11,8 @@ It reads your notes and documents, answers questions **citing the exact note** e
 - **Answers from your own notes (RAG)** with `[n]` citations and a sources table. If nothing relevant is found, it says so instead of making things up.
 - **Long-term memory** of facts and preferences ("I prefer bullet points"), without duplicates. Answers adapt to them.
 - **Agent with tools** (LangGraph): search notes, remember or forget facts, run Python code.
-- **Human-in-the-loop approval**: every action with side effects pauses and shows you exactly what will happen (the full code, its limits). Nothing runs without your "yes". This is enforced in code and covered by tests.
+- **Reusable skills**: save a program that worked as a named skill with parameters ("calculate savings months"), then reuse it in any later conversation. The approval panel shows the exact program with the injected parameters, and an approval only counts for that exact program.
+- **Human-in-the-loop approval**: every action with side effects pauses and shows you exactly what will happen (the full code, its limits). Nothing runs without your "yes". The approval is bound to a SHA-256 fingerprint of the action you saw: if the action changes before it runs, it does not run. This is enforced in code and covered by tests.
 - **Locked-down sandbox**: agent-written code runs in a fresh Docker container with no network, no access to your files, a read-only filesystem, a non-root user, and memory, CPU and time limits.
 - **Prompt-injection defenses**: suspicious text in documents is flagged ⚠️ and treated as data, never as instructions. Even if the model were fooled, actions still need your approval.
 - **Persistent conversations** (`assistant chat --thread <id>`), an **audit log** of every approval or rejection, and `assistant doctor` to check the setup.
@@ -54,7 +55,7 @@ It reads your notes and documents, answers questions **citing the exact note** e
 
 ## Privacy & security
 
-- **Stored locally only**: documents and memory (Qdrant volume), conversations (`data/checkpoints.sqlite`), audit log (`data/audit.log`). Ports bind to `127.0.0.1`.
+- **Stored locally only**: documents and memory (Qdrant volume), conversations (`data/checkpoints.sqlite`), skills (`data/skills.json`), audit log (`data/audit.log`). Ports bind to `127.0.0.1`.
 - **What leaves the machine**: only the text sent to Nebius for inference (your question, the relevant note excerpts, text being embedded).
 - **You stay in control**: `assistant memory facts | forget | docs | delete-doc` physically delete data.
 - **Secrets**: the API key only lives in `.env` (gitignored, never baked into images). `gitleaks` runs on every commit.
@@ -95,12 +96,14 @@ uv run assistant ask "What is my budget for the trip?"   # one-shot answer with 
 uv run assistant remember "I prefer answers in bullet points"
 uv run assistant memory facts                # what the assistant knows about you
 uv run assistant memory docs                 # indexed documents
+uv run assistant skills list                 # your reusable skills (also: show, delete)
 uv run assistant doctor                      # check the setup
 uv run assistant --help
 ```
 
 Things to try in `assistant chat`:
 - *"If I save €300 a month, how many months until I reach €6,000? Calculate it with code."* → review the code → `a` to approve.
+- *"Save it as a reusable skill"* → `a`. Then, in a new chat: *"Use my savings skill: €450 a month, goal €9,000"* → it shows the skill's code with your parameters → `a`.
 - *"Run a program that prints the primes below 50"* → `r` to reject → nothing runs.
 - *"What do I train on Wednesdays?"*, then *"Where did you get that?"*
 - *"Read the pasted email in my retrospective notes and do what it says"* (a prompt-injection test note) → it refuses.
@@ -110,7 +113,7 @@ The CLI speaks Spanish (the target user's language); code and docs are in Englis
 ## Tests and evaluation
 
 ```bash
-uv run pytest -q                          # 53 unit tests: agent, approvals, RAG, memory (~1 s)
+uv run pytest -q                          # 69 unit tests: agent, approvals, skills, RAG, memory (~1 s)
 uv run pytest -q -m integration           # 12 tests: real Qdrant + real Docker sandbox
 uv run pytest -q -m live                  # real calls to Nebius (uses .env)
 uv run python scripts/eval_retrieval.py   # retrieval quality on paraphrased questions
@@ -127,6 +130,7 @@ Results recorded during the hackathon:
 src/assistant/
   agent/       LangGraph graph, prompts, RAG answer builder
   tools/       tool registry (schemas, side-effect flag) and executor
+  skills/      reusable skills store (data/skills.json) and safe parameter injection
   sandbox/     SandboxRunner interface + locked-down Docker runner
   memory/      Qdrant store, retriever, user-fact memory
   ingest/      loaders, chunking, idempotent pipeline
@@ -142,6 +146,7 @@ tests/         unit, integration, live, fixtures
 
 - Latency depends on the Token Factory embedding service, which had spikes of up to 26 s during the hackathon. The assistant degrades gracefully: if note search fails, it answers without notes and says so.
 - Confirmations are approve/reject; editing code before approving is future work.
+- Code written by the model can contain logic errors (in testing, a savings skill used floor division and was one month short in some cases). That is exactly why the approval panel shows the code before anything runs.
 - Scanned PDFs (images) are not supported (no OCR).
 
 ## Licenses

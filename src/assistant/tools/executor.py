@@ -9,10 +9,14 @@ from assistant.memory.facts import FactMemory
 from assistant.memory.retrieval import Retriever
 from assistant.sandbox.base import SandboxRunner
 from assistant.sandbox.docker_runner import SandboxError
+from assistant.skills.store import Skill, SkillError, SkillStore, build_program
 from assistant.tools.registry import (
+    DeleteSkillArgs,
     ForgetFactArgs,
     RememberFactArgs,
     RunCodeArgs,
+    RunSkillArgs,
+    SaveSkillArgs,
     SearchKnowledgeArgs,
 )
 
@@ -24,12 +28,35 @@ class ToolOutput:
 
 
 class ToolExecutor:
-    def __init__(self, retriever: Retriever, facts: FactMemory, sandbox: SandboxRunner):
+    def __init__(
+        self,
+        retriever: Retriever,
+        facts: FactMemory,
+        sandbox: SandboxRunner,
+        skills: SkillStore,
+    ):
         self._retriever = retriever
         self._facts = facts
         self._sandbox = sandbox
+        self._skills = skills
 
-    async def execute(self, name: str, args: BaseModel, *, citation_offset: int) -> ToolOutput:
+    async def _run(self, code: str) -> dict[str, Any]:
+        try:
+            run = await self._sandbox.run(code)
+        except SandboxError as exc:
+            return {"status": "error", "error": str(exc)}
+        return {"status": "executed", **asdict(run)}
+
+    async def execute(
+        self,
+        name: str,
+        args: BaseModel,
+        *,
+        citation_offset: int,
+        approved_program: str | None = None,
+    ) -> ToolOutput:
+        """Run a validated tool call. For run_skill, `approved_program` is the exact program
+        the user approved, so a skill edited in between can never run unseen."""
         if isinstance(args, SearchKnowledgeArgs):
             citations = await self._retriever.search(args.query)
             for c in citations:
@@ -59,10 +86,33 @@ class ToolExecutor:
             return ToolOutput({"status": "deleted" if deleted else "not_found"}, [])
 
         if isinstance(args, RunCodeArgs):
+            return ToolOutput(await self._run(args.code), [])
+
+        if name == "list_skills":
+            skills = [
+                {"name": s.name, "description": s.description, "parameters": s.parameters}
+                for s in self._skills.list()
+            ]
+            return ToolOutput({"skills": skills}, [])
+
+        if isinstance(args, SaveSkillArgs):
+            skill, created = self._skills.save(Skill(**args.model_dump()))
+            return ToolOutput({"status": "saved" if created else "updated", "name": skill.name}, [])
+
+        if isinstance(args, RunSkillArgs):
             try:
-                run = await self._sandbox.run(args.code)
-            except SandboxError as exc:
+                program = approved_program or build_program(
+                    self._skills.get(args.name), args.params
+                )
+            except SkillError as exc:
                 return ToolOutput({"status": "error", "error": str(exc)}, [])
-            return ToolOutput({"status": "executed", **asdict(run)}, [])
+            result = await self._run(program)
+            if result.get("exit_code") == 0:
+                self._skills.record_run(args.name)
+            return ToolOutput({"skill": args.name, **result}, [])
+
+        if isinstance(args, DeleteSkillArgs):
+            deleted = self._skills.delete(args.name)
+            return ToolOutput({"status": "deleted" if deleted else "not_found"}, [])
 
         return ToolOutput({"status": "error", "error": f"Unknown tool {name}"}, [])

@@ -16,7 +16,7 @@ from openai import APIConnectionError, APIStatusError
 
 from assistant.agent.graph import AgentDeps, build_graph
 from assistant.api.routes import chat as chat_routes
-from assistant.api.routes import health, memory
+from assistant.api.routes import health, memory, skills
 from assistant.config import get_settings
 from assistant.guardrails.audit import AuditLog
 from assistant.ingest.pipeline import Ingestor
@@ -27,6 +27,7 @@ from assistant.memory.facts import FactMemory
 from assistant.memory.retrieval import Retriever
 from assistant.memory.store import MemoryStore, build_qdrant
 from assistant.sandbox.docker_runner import DockerRunner
+from assistant.skills.store import SkillStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Conversation state (LangGraph checkpoints) persists in data/checkpoints.sqlite.
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    app.state.skills = SkillStore(settings.data_dir / "skills.json")
     async with AsyncSqliteSaver.from_conn_string(
         str(settings.data_dir / "checkpoints.sqlite")
     ) as checkpointer:
@@ -62,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             sandbox=DockerRunner(settings),
             audit=AuditLog(settings.data_dir / "audit.log"),
             settings=settings,
+            skills=app.state.skills,
         )
         app.state.graph = build_graph(deps, checkpointer)
         yield
@@ -86,3 +89,4 @@ async def nebius_unavailable(request: Request, exc: Exception) -> JSONResponse:
 app.include_router(health.router)
 app.include_router(memory.router)
 app.include_router(chat_routes.router)
+app.include_router(skills.router)

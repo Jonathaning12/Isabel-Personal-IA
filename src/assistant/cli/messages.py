@@ -47,7 +47,11 @@ CONFIRM_TITLES = {
     "run_code_in_sandbox": "⚠️  El asistente quiere ejecutar este código",
     "remember_fact": "⚠️  El asistente quiere guardar esto en tu memoria",
     "forget_fact": "⚠️  El asistente quiere borrar este recuerdo",
+    "save_skill": "⚠️  El asistente quiere guardar esta skill reutilizable",
+    "run_skill": "⚠️  El asistente quiere ejecutar una de tus skills",
+    "delete_skill": "⚠️  El asistente quiere borrar esta skill",
 }
+CONFIRM_PARAMS = "Parámetros: {params}"
 CONFIRM_LIMITS = (
     "Sandbox aislado · sin internet · sin acceso a tus archivos · "
     "memoria {memory} · {cpus} CPU · máx. {timeout_s} s"
@@ -59,6 +63,12 @@ SANDBOX_OUTPUT = "Salida del sandbox · código {exit_code} · {seconds:.1f} s"
 SANDBOX_TIMEOUT = "Salida del sandbox · ⏱ cortado por tiempo"
 FACT_SAVED = "[green]✔ Guardado en memoria:[/] {fact}"
 FACT_DELETED = "[green]✔ Recuerdo borrado[/]"
+SKILL_SAVED = "[green]✔ Skill guardada:[/] [bold]{name}[/]  [dim](ver: assistant skills list)[/]"
+SKILL_DELETED = "[green]✔ Skill borrada:[/] {name}"
+NO_SKILLS = (
+    "[dim]Todavía no tienes skills. Pídele al asistente que guarde un cálculo como skill.[/]"
+)
+ACTION_STALE = "[yellow]⚠ La acción cambió después de que la vieras; no se ejecutó.[/]"
 
 # --- doctor -------------------------------------------------------------------
 DOCTOR_OK = "[green]✔ Todo listo. Prueba: [bold]uv run assistant chat[/][/]"

@@ -12,6 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from assistant.agent.graph import payload_fingerprint
+
 router = APIRouter()
 
 MAX_MESSAGE_CHARS = 8000
@@ -41,15 +43,17 @@ def _response(thread_id: str, result: dict[str, Any]) -> dict[str, Any]:
     return {**base, "status": "done", "answer": result["messages"][-1]["content"]}
 
 
-async def _pending(request: Request, thread_id: str) -> bool:
+async def _pending(request: Request, thread_id: str) -> dict[str, Any] | None:
+    """The approval request currently waiting in this thread (what the user was shown)."""
     state = await request.app.state.graph.aget_state(_config(thread_id))
-    return bool(state.next)
+    interrupts = [i for task in state.tasks for i in task.interrupts]
+    return interrupts[0].value if interrupts else None
 
 
 @router.post("/chat")
 async def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
     thread_id = body.thread_id or uuid.uuid4().hex
-    if await _pending(request, thread_id):
+    if await _pending(request, thread_id) is not None:
         raise HTTPException(409, "There is an action waiting for approval in this conversation")
     result = await request.app.state.graph.ainvoke(
         {"messages": [{"role": "user", "content": body.message}]}, _config(thread_id)
@@ -59,9 +63,10 @@ async def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
 
 @router.post("/chat/{thread_id}/confirm")
 async def confirm(request: Request, thread_id: str, body: ConfirmRequest) -> dict[str, Any]:
-    if not await _pending(request, thread_id):
+    pending = await _pending(request, thread_id)
+    if pending is None:
         raise HTTPException(409, "There is no action waiting for approval")
-    result = await request.app.state.graph.ainvoke(
-        Command(resume=body.decision), _config(thread_id)
-    )
+    # Bind the decision to the exact action the user was shown.
+    resume = {"decision": body.decision, "fingerprint": payload_fingerprint(pending)}
+    result = await request.app.state.graph.ainvoke(Command(resume=resume), _config(thread_id))
     return _response(thread_id, result)

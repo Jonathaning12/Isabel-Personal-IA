@@ -46,6 +46,42 @@ class RunCodeArgs(BaseModel):
     )
 
 
+class ListSkillsArgs(BaseModel):
+    pass
+
+
+class SaveSkillArgs(BaseModel):
+    name: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9_]{1,39}$",
+        description="Short snake_case name, e.g. calcular_ahorro",
+    )
+    description: str = Field(
+        min_length=1, max_length=300, description="What the skill does, one sentence in Spanish"
+    )
+    parameters: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Names of the inputs, e.g. ['ahorro_mensual', 'objetivo']",
+    )
+    code: str = Field(
+        min_length=1,
+        max_length=20_000,
+        description="Python 3 program that reads its inputs from the dict `params` "
+        "(e.g. params['objetivo']) and prints the result. Do not define `params` yourself.",
+    )
+
+
+class RunSkillArgs(BaseModel):
+    name: str = Field(min_length=1, max_length=40, description="Name of a saved skill")
+    params: dict[str, Any] = Field(
+        default_factory=dict, description="Values for the skill's parameters"
+    )
+
+
+class DeleteSkillArgs(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -89,6 +125,33 @@ TOOLS: dict[str, Tool] = {
             "user's files, 30 s limit; numpy and pandas are available. Use it for calculations, "
             "data processing, or when the user asks to run code.",
             RunCodeArgs,
+            side_effect=True,
+        ),
+        Tool(
+            "list_skills",
+            "List the user's saved reusable skills with their parameters.",
+            ListSkillsArgs,
+            side_effect=False,
+        ),
+        Tool(
+            "save_skill",
+            "Save a working Python program as a reusable skill for the user. Generalize it: "
+            "read the inputs from `params` instead of hardcoding them. Call it only when the "
+            "user asks to save something as a skill.",
+            SaveSkillArgs,
+            side_effect=True,
+        ),
+        Tool(
+            "run_skill",
+            "Run one of the user's saved skills in the sandbox with the given parameters. "
+            "Prefer it over writing new code when a saved skill fits the request.",
+            RunSkillArgs,
+            side_effect=True,
+        ),
+        Tool(
+            "delete_skill",
+            "Delete one of the user's saved skills.",
+            DeleteSkillArgs,
             side_effect=True,
         ),
     )

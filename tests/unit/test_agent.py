@@ -11,13 +11,14 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
 
-from assistant.agent.graph import AgentDeps, build_graph
+from assistant.agent.graph import AgentDeps, build_graph, payload_fingerprint
 from assistant.agent.prompts import ALL_REJECTED_ANSWER
 from assistant.guardrails.audit import AuditLog
 from assistant.ingest.pipeline import Ingestor
 from assistant.memory.facts import FactMemory
 from assistant.memory.retrieval import Retriever
 from assistant.sandbox.base import SandboxResult
+from assistant.skills.store import Skill, SkillStore
 
 
 def tool_call(name: str, args: dict, call_id: str = "c1") -> SimpleNamespace:
@@ -70,11 +71,19 @@ def make_agent(store, fake_embedder, settings, tmp_path):
             sandbox=sandbox,
             audit=AuditLog(tmp_path / "audit.log"),
             settings=settings,
+            skills=SkillStore(tmp_path / "skills.json"),
         )
         graph = build_graph(deps, checkpointer or InMemorySaver())
+        make.skills = deps.skills
         return graph, chat, sandbox
 
     return make
+
+
+def approve(paused: dict) -> Command:
+    """What the API sends: 'approve' bound to the fingerprint of the action shown."""
+    pending = paused["__interrupt__"][0].value
+    return Command(resume={"decision": "approve", "fingerprint": payload_fingerprint(pending)})
 
 
 def config(thread: str = "t1") -> dict:
@@ -123,7 +132,7 @@ async def test_side_effect_tool_pauses_and_runs_only_after_approval(make_agent, 
     assert paused["__interrupt__"][0].value["limits"]["network"] is False
     assert sandbox.runs == []  # nothing ran before approval
 
-    done = await graph.ainvoke(Command(resume="approve"), config())
+    done = await graph.ainvoke(approve(paused), config())
 
     assert sandbox.runs == [CODE["code"]]
     assert done["actions"][0]["decision"] == "approve"
@@ -149,12 +158,21 @@ async def test_rejected_action_never_runs_and_ends_turn_without_llm(make_agent, 
     assert "reject" in (tmp_path / "audit.log").read_text()
 
 
-async def test_anything_but_approve_counts_as_reject(make_agent):
+@pytest.mark.parametrize(
+    "resume",
+    [
+        "approve",  # a bare string is not bound to what the user saw
+        "yes please",
+        {"decision": "approve"},  # no fingerprint
+        {"decision": "approve", "fingerprint": "0" * 64},  # wrong fingerprint
+    ],
+)
+async def test_only_a_bound_approval_counts(make_agent, resume):
     graph, _, sandbox = make_agent(
         reply(calls=[tool_call("run_code_in_sandbox", CODE)]), reply("ok")
     )
     await graph.ainvoke(user("ejecuta"), config())
-    await graph.ainvoke(Command(resume="yes please"), config())
+    await graph.ainvoke(Command(resume=resume), config())
     assert sandbox.runs == []
 
 
@@ -171,7 +189,7 @@ async def test_two_actions_each_need_their_own_approval_and_run_once(make_agent,
 
     first = await graph.ainvoke(user("haz dos cosas"), config())
     assert first["__interrupt__"][0].value["tool"] == "run_code_in_sandbox"
-    second = await graph.ainvoke(Command(resume="approve"), config())
+    second = await graph.ainvoke(approve(first), config())
     assert second["__interrupt__"][0].value["tool"] == "remember_fact"
     assert sandbox.runs == []  # still nothing ran: all approvals come first
 
@@ -260,6 +278,7 @@ async def test_agent_still_answers_when_note_search_fails(store, settings, tmp_p
         sandbox=FakeSandbox(),
         audit=AuditLog(tmp_path / "audit.log"),
         settings=settings,
+        skills=SkillStore(tmp_path / "skills.json"),
     )
     graph = build_graph(deps, InMemorySaver())
 
@@ -282,6 +301,7 @@ async def test_failing_tool_is_reported_to_the_model_not_raised(store, settings,
         sandbox=FakeSandbox(),
         audit=AuditLog(tmp_path / "audit.log"),
         settings=settings,
+        skills=SkillStore(tmp_path / "skills.json"),
     )
     graph = build_graph(deps, InMemorySaver())
 
@@ -306,3 +326,83 @@ async def test_previous_sources_are_available_for_follow_up(
     second_system_prompt = chat.calls[1]["messages"][0]["content"]
     assert "Sources you cited in your previous answer" in second_system_prompt
     assert "[1] gimnasio.txt" in second_system_prompt
+
+
+SAVINGS = Skill(
+    name="calcular_ahorro",
+    description="Meses para llegar a un objetivo de ahorro",
+    parameters=["ahorro_mensual", "objetivo"],
+    code="import math\nprint(math.ceil(params['objetivo'] / params['ahorro_mensual']))",
+)
+
+
+async def test_save_skill_needs_approval(make_agent):
+    args = SAVINGS.model_dump(include={"name", "description", "parameters", "code"})
+    graph, _, _ = make_agent(reply(calls=[tool_call("save_skill", args)]), reply("Guardada."))
+
+    paused = await graph.ainvoke(user("guárdalo como skill"), config())
+    assert paused["__interrupt__"][0].value["tool"] == "save_skill"
+    assert make_agent.skills.list() == []  # not saved before approval
+
+    await graph.ainvoke(approve(paused), config())
+    assert [s.name for s in make_agent.skills.list()] == ["calcular_ahorro"]
+
+
+async def test_run_skill_shows_exact_program_and_runs_it(make_agent):
+    params = {"ahorro_mensual": 500, "objetivo": 6000}
+    graph, chat, sandbox = make_agent(
+        reply(calls=[tool_call("run_skill", {"name": "calcular_ahorro", "params": params})]),
+        reply("12 meses."),
+    )
+    make_agent.skills.save(SAVINGS.model_copy())
+
+    paused = await graph.ainvoke(user("usa mi skill de ahorro con 500"), config())
+    pending = paused["__interrupt__"][0].value
+    assert pending["tool"] == "run_skill"
+    assert "params['objetivo']" in pending["program"]
+    assert '"objetivo": 6000' in pending["program"]
+    assert sandbox.runs == []
+
+    await graph.ainvoke(approve(paused), config())
+    assert sandbox.runs == [pending["program"]]  # exactly the approved program
+    assert make_agent.skills.get("calcular_ahorro").runs == 1
+    assert "calcular_ahorro(ahorro_mensual, objetivo)" in chat.calls[0]["messages"][0]["content"]
+
+
+async def test_skill_edited_after_approval_request_never_runs_unseen_code(make_agent):
+    params = {"ahorro_mensual": 500, "objetivo": 6000}
+    graph, _, sandbox = make_agent(
+        reply(calls=[tool_call("run_skill", {"name": "calcular_ahorro", "params": params})]),
+        reply("ok"),
+    )
+    make_agent.skills.save(SAVINGS.model_copy())
+    paused = await graph.ainvoke(user("usa la skill"), config())
+    approved = paused["__interrupt__"][0].value["program"]
+
+    tampered = SAVINGS.model_copy(update={"code": "print('tampered')"})
+    make_agent.skills.save(tampered)
+    done = await graph.ainvoke(approve(paused), config())  # approves what the user SAW
+
+    assert "tampered" not in approved
+    assert sandbox.runs == []  # payload changed → the approval no longer applies
+    assert done["actions"][0]["decision"] == "stale"
+    assert done["actions"][0]["result"]["status"] == "not_run"
+
+
+async def test_unknown_skill_or_bad_params_never_ask_or_run(make_agent):
+    graph, _, sandbox = make_agent(
+        reply(
+            calls=[
+                tool_call("run_skill", {"name": "no_existe", "params": {}}, "c1"),
+                tool_call("run_skill", {"name": "calcular_ahorro", "params": {"x": 1}}, "c2"),
+            ]
+        ),
+        reply("No pude."),
+    )
+    make_agent.skills.save(SAVINGS.model_copy())
+
+    result = await graph.ainvoke(user("usa skills"), config())
+
+    assert "__interrupt__" not in result
+    assert sandbox.runs == []
+    assert [a["result"]["status"] for a in result["actions"]] == ["error", "error"]

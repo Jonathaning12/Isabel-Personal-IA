@@ -62,6 +62,7 @@ The architecture below describes the full vision. Under hackathon time pressure,
 | CLI `chat`, `ingest`, `memory`, `doctor` + SSE streaming | `GET /metrics`, concurrent benchmark, `mypy --strict` (Core = `ruff` + `pytest`) |
 | `.env`, secret scan, input limits, audit log | Local bearer token on the API (Core = bind to `127.0.0.1`) |
 | `PITCH.md` with demo script and judge Q&A | Polished README diagrams |
+| Reusable skills (save / list / run / delete, approval-gated, run in sandbox) — added 2026-10-28 for the track's "reusable skills" wording | — |
 | Submission package per `SUBMISSION.md` (license, README, release, video, feedback) | Hosted web demo on Nebius AI Cloud (only if organizers require a hosted URL) |
 
 ### 2.0.1 Official hackathon rules (binding)

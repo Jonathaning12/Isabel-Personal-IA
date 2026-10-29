@@ -14,6 +14,7 @@
 State is checkpointed per thread_id (SQLite), so conversations survive restarts.
 """
 
+import hashlib
 import json
 import logging
 import re
@@ -32,6 +33,7 @@ from assistant.agent.prompts import (
     NO_NOTES_CONTEXT,
     NOTES_UNAVAILABLE,
     PREVIOUS_SOURCES_BLOCK,
+    SKILLS_BLOCK,
 )
 from assistant.agent.rag import format_context, normalize_citations
 from assistant.agent.state import AgentState
@@ -40,6 +42,7 @@ from assistant.guardrails.audit import AuditLog
 from assistant.memory.facts import FactMemory, SupportsComplete
 from assistant.memory.retrieval import Citation, Retriever
 from assistant.sandbox.base import SandboxRunner
+from assistant.skills.store import Skill, SkillStore, build_program
 from assistant.tools.executor import ToolExecutor
 from assistant.tools.registry import TOOLS, openai_tool_specs
 
@@ -55,6 +58,7 @@ class AgentDeps:
     sandbox: SandboxRunner
     audit: AuditLog
     settings: Settings
+    skills: SkillStore
 
 
 def build_system_prompt(
@@ -63,11 +67,21 @@ def build_system_prompt(
     *,
     previous_sources: list[str] | None = None,
     notes_unavailable: bool = False,
+    skills: list[Skill] | None = None,
 ) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
     sources_block = (
         PREVIOUS_SOURCES_BLOCK.format(sources="\n".join(f"- {s}" for s in previous_sources))
         if previous_sources
+        else ""
+    )
+    skills_block = (
+        SKILLS_BLOCK.format(
+            skills="\n".join(
+                f"- {s.name}({', '.join(s.parameters)}): {s.description}" for s in skills
+            )
+        )
+        if skills
         else ""
     )
     citations = [Citation(**c) for c in context]
@@ -77,6 +91,7 @@ def build_system_prompt(
         context_block = NOTES_UNAVAILABLE if notes_unavailable else NO_NOTES_CONTEXT
     return AGENT_SYSTEM.format(
         facts_block=facts_block,
+        skills_block=skills_block,
         previous_sources_block=sources_block,
         context_block=context_block,
     )
@@ -93,6 +108,26 @@ def cited_sources(answer: str, context: list[dict[str, Any]]) -> list[str]:
     return sources
 
 
+def payload_fingerprint(payload: dict[str, Any]) -> str:
+    """SHA-256 of an approval request. An approval is only valid for this exact payload."""
+    data = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(data.encode()).hexdigest()
+
+
+def classify_decision(decision: Any, payload: dict[str, Any]) -> str:
+    """ "approve" only for {"decision": "approve", "fingerprint": <this payload's fingerprint>}.
+
+    On resume LangGraph re-runs the node and rebuilds the payload. If anything changed
+    since the user saw it (e.g. a skill was edited), the fingerprint no longer matches:
+    the action is "stale" and does not run. Anything else is "reject".
+    """
+    if isinstance(decision, dict) and decision.get("decision") == APPROVE:
+        if decision.get("fingerprint") == payload_fingerprint(payload):
+            return APPROVE
+        return "stale"
+    return "reject"
+
+
 def _summary(result: dict[str, Any]) -> str:
     if "exit_code" in result:
         return f"exit_code={result['exit_code']} timed_out={result['timed_out']}"
@@ -100,7 +135,7 @@ def _summary(result: dict[str, Any]) -> str:
 
 
 def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
-    executor = ToolExecutor(deps.retriever, deps.facts, deps.sandbox)
+    executor = ToolExecutor(deps.retriever, deps.facts, deps.sandbox, deps.skills)
     tool_specs = openai_tool_specs()
 
     async def load_context(state: AgentState) -> dict[str, Any]:
@@ -137,6 +172,7 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             state["context"],
             previous_sources=state.get("previous_sources"),
             notes_unavailable=state.get("notes_unavailable", False),
+            skills=deps.skills.list(),
         )
         reply = await deps.chat.complete(
             [{"role": "system", "content": system}, *state["messages"]],
@@ -165,8 +201,10 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
         thread_id = config["configurable"]["thread_id"]
         calls = state["messages"][-1]["tool_calls"]
 
-        # 1. Validate every call against its schema.
+        # 1. Validate every call against its schema. For run_skill, resolve the exact
+        #    program now: it is what the user will see and what will run.
         parsed = []
+        programs: dict[str, str] = {}
         for call in calls:
             name = call["function"]["name"]
             tool = TOOLS.get(name)
@@ -176,8 +214,11 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                 args = tool.args_model.model_validate(
                     json.loads(call["function"]["arguments"] or "{}")
                 )
+                if name == "run_skill":
+                    skill = deps.skills.get(args.name)
+                    programs[call["id"]] = build_program(skill, args.params)
                 parsed.append((call, tool, args, None))
-            except (ValueError, ValidationError) as exc:
+            except (ValueError, ValidationError) as exc:  # SkillError is a ValueError
                 parsed.append((call, tool, None, f"Invalid tool call: {exc}"))
 
         # 2. Ask for ALL approvals first. Nothing has run yet, so when LangGraph re-runs
@@ -190,9 +231,12 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                     "tool": tool.name,
                     "args": args.model_dump(),
                 }
-                if tool.name == "run_code_in_sandbox":
+                if tool.name in ("run_code_in_sandbox", "run_skill"):
                     payload["limits"] = deps.sandbox.limits()
-                decisions[call["id"]] = interrupt(payload)
+                if tool.name == "run_skill":
+                    payload["program"] = programs[call["id"]]
+                    payload["description"] = deps.skills.get(args.name).description
+                decisions[call["id"]] = classify_decision(interrupt(payload), payload)
 
         # 3. Execute: read-only tools directly, side-effect tools only if approved.
         messages, actions = [], list(state["actions"])
@@ -203,6 +247,13 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             decision = None
             if error is not None:
                 result: dict[str, Any] = {"status": "error", "error": error}
+            elif tool.side_effect and decisions.get(call["id"]) == "stale":
+                decision = "stale"
+                result = {
+                    "status": "not_run",
+                    "message": "The action changed after the user saw it, so it was not run. "
+                    "Tell the user and request it again.",
+                }
             elif tool.side_effect and decisions.get(call["id"]) != APPROVE:
                 decision = "reject"
                 result = {
@@ -213,7 +264,10 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                 decision = APPROVE if tool.side_effect else None
                 try:
                     output = await executor.execute(
-                        name, args, citation_offset=offset + len(new_citations)
+                        name,
+                        args,
+                        citation_offset=offset + len(new_citations),
+                        approved_program=programs.get(call["id"]),
                     )
                     result = output.result
                     new_citations += output.new_citations
