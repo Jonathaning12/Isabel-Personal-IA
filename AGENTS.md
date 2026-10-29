@@ -427,6 +427,7 @@ Time rules:
 | Code, identifiers, comments, docstrings, logs, commit messages, README, tests | **English** |
 | Direct interaction with the user (chat replies, CLI messages shown to the user, confirmation prompts, error messages for the user, the agent's end-of-task reports) | **Spanish** |
 | `PITCH.md` (demo script, judge Q&A, glossary; it is for the student) | **Spanish** |
+| `VIDEO_SCRIPT.md` (read-aloud script for the submission video) | **English** |
 
 `PITCH.md` structure:
 ```

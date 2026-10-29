@@ -44,6 +44,8 @@ Tú (terminal) ──► API (FastAPI, en tu máquina) ──► Agente (LangGra
 4. Si Nebius va lento (`doctor` tarda más de 20 s en "Embeddings"), espera o graba más tarde. Ten el **vídeo de respaldo** a mano.
 
 ### Guion del vídeo (< 3 minutos)
+> **Versión en inglés para leer en voz alta: [`VIDEO_SCRIPT.md`](VIDEO_SCRIPT.md).** La tabla de abajo es la misma estructura, en español, para entenderla.
+
 | Tiempo | Pantalla | Qué dices (idea) |
 |---|---|---|
 | 0:00–0:20 | Título / README | "Los asistentes de IA no conocen tu vida, y para que la conozcan tienes que subir tus datos a la nube. Construimos un asistente **privado**: tus notas y tu memoria se quedan en tu máquina; el razonamiento lo hace **NVIDIA Nemotron 3 Super** en **Nebius Token Factory**." |
