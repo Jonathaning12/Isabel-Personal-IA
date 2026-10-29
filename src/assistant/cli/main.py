@@ -1,6 +1,6 @@
 """Terminal interface (Typer + Rich). It talks to the local FastAPI backend over HTTP.
 
-Commands: chat, ingest, ask, search, remember, memory (facts / docs / forget / delete-doc).
+Commands: chat, ingest, ask, search, remember, memory (facts / docs / forget / delete-doc), doctor.
 """
 
 import os
@@ -293,3 +293,15 @@ def chat(
         except Exception as exc:  # never lose the conversation because of one bad turn
             console.print(msg.CHAT_UNEXPECTED.format(error=type(exc).__name__))
     console.print(msg.CHAT_RESUME.format(thread=thread_id))
+
+
+@app.command()
+def doctor() -> None:
+    """Comprueba que todo está listo: .env, Nebius, modelos, Qdrant, sandbox y API."""
+    from assistant.cli.doctor import run_doctor
+
+    if run_doctor(console):
+        console.print(msg.DOCTOR_OK)
+    else:
+        console.print(msg.DOCTOR_FAIL)
+        raise typer.Exit(1)

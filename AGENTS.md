@@ -377,6 +377,8 @@ Time rules:
 - README: architecture, privacy statement, setup in under 5 commands, demo script.
 - `scripts/demo.sh`: ingest notes → ask a cited question → teach a fact → ask for a data-analysis script → approve → show sandbox output.
 
+> **As built (2026-10-28):** no SSE streaming (first item of the cut list; latency is dominated by embeddings, not generation); `doctor`, `scripts/bench.py` (10 sequential turns) and `scripts/demo_setup.sh` built; no `GET /metrics` (stretch).
+
 **Definition of Done**
 - [ ] On a clean machine with Docker: `cp .env.example .env` (add key) → `docker compose up -d` → `uv run assistant doctor` is all green → `uv run assistant chat` works end to end.
 - [ ] Benchmark recorded in `MEMORY.md`: p50/p95 end-to-end latency, p50 TTFT, retrieval p95 **< 300 ms** locally, and 0 errors across the 5 concurrent turns.

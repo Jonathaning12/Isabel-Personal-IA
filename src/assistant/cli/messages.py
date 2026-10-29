@@ -59,3 +59,7 @@ SANDBOX_OUTPUT = "Salida del sandbox · código {exit_code} · {seconds:.1f} s"
 SANDBOX_TIMEOUT = "Salida del sandbox · ⏱ cortado por tiempo"
 FACT_SAVED = "[green]✔ Guardado en memoria:[/] {fact}"
 FACT_DELETED = "[green]✔ Recuerdo borrado[/]"
+
+# --- doctor -------------------------------------------------------------------
+DOCTOR_OK = "[green]✔ Todo listo. Prueba: [bold]uv run assistant chat[/][/]"
+DOCTOR_FAIL = "[red]✘ Hay problemas. Sigue la columna «Cómo arreglarlo».[/]"

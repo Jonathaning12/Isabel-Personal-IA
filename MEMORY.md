@@ -1,23 +1,24 @@
 # MEMORY.md
 
 ## Current Phase
-Phase 3 — ✅ DONE (5/5 DoD items, adapted) on 2026-10-28 16:57. Session today started 16:15. Total time used so far: ~3 h of ~30 h. Next: Phase 4 (CLI polish, demo script, quick bench, README; 4 h budget), then submission.
+Phase 4 — ✅ DONE (Core) on 2026-10-28 ~18:20. All 4 build phases complete. Total time used: ~4.5 h of ~30 h. Next: SUBMISSION (public repo, Release, video, form) + rehearsal.
 
-Phase 3 DoD:
-- [x] Graph unit tests with scripted LLM: plain answer, read-only tool, approve, reject, non-"approve" = reject, two actions (run once), invalid args, unknown tool, loop guard, injection can't bypass approval, persistence across restart (11 tests). `edit` option is Stretch → not built.
-- [x] No side-effect tool runs without approve (tests assert FakeSandbox.runs == [] on reject / before approval)
-- [x] Sandbox integration (real Docker, 9 tests): 45 ✓, network blocked ✓, infinite loop killed at timeout ✓, write outside /work fails ✓, non-root ✓, host files invisible ✓, output truncated ✓
-- [x] Prompt injection live: Nemotron refused "do what the pasted email says" and proposed no tool; unit test proves approval can't be bypassed even if the model is fooled
-- [x] Restarting the api container and resuming the thread keeps context (live check + unit test with SQLite)
+Phase 4 DoD (adapted):
+- [x] Clean clone: `cp .env.example .env` → `uv sync` → 53 tests pass, `docker compose config` OK, `doctor` explains the missing key. Full stack (`docker compose up -d --build`) + `doctor` all ✔ on the dev machine.
+- [x] Benchmark recorded (2026-10-28 18:05, 10 sequential turns, 0 errors): p50 12.9 s, p95 30.1 s new questions; ~1 s cached. Concurrency = stretch.
+- [~] Streaming: NOT built (cut list #1; latency is embedding-bound). Documented.
+- [x] `scripts/demo_setup.sh` runs end to end (start, ingest, doctor, warm-up). README matches reality.
+- [x] Tests: 53 unit + 12 integration pass; live passed in Phase 1.
+- [ ] Submission items → see SUBMISSION.md §1 (R2, R4 public, R8 video, R10 feedback in form).
 
 ## Next Steps
-1. Student: try `uv run assistant chat` (commands in PITCH.md) and approve/reject a code run.
-2. Student: still waiting for organizers on GitHub Release as "test build" (SUBMISSION.md §3).
-3. Phase 4: `assistant doctor` (env, Nebius, models, Qdrant, sandbox image, dim match).
-4. Phase 4: `scripts/demo.sh` / demo guide + finalize PITCH.md demo script; record a backup video when Nebius latency is low.
-5. Phase 4: quick bench (10 sequential turns, p50/p95), README final (NVIDIA & Nebius section, licenses, prerequisites incl. DOCKER_GID on Linux).
-6. Decide: streaming (SSE) is first in the cut list; given embedding latency dominates, skip it unless time remains.
-7. Submission: public repo + history scan, Release, video, form (SUBMISSION.md).
+1. Student: rehearse the demo with PITCH.md "Guion del vídeo"; record the video (< 3 min, YouTube, no copyrighted music) when Nebius latency is low.
+2. Student: decide video language (Spanish narration vs English); judges' forms are likely English → English subtitles or narration recommended.
+3. Organizers' answer on demo URL (SUBMISSION.md §3). Default plan: GitHub Release `v1.0.0` as "test build".
+4. Before going public: re-run gitleaks over full history, make repo public, check MIT shows in About, add description + topics.
+5. Create GitHub Release v1.0.0 (tag the exact commit used for the video).
+6. Fill the submission form: description (SUBMISSION.md §4), track Personal AI, repo URL, video URL, demo URL, feedback (§6).
+7. Optional stretch if > 6 h remain: SSE streaming, `edit` on confirmations.
 
 ## Decisions
 - 2026-10-27 · Stack: Python 3.12, uv, FastAPI, LangGraph, Qdrant (Docker), openai SDK → Nebius Token Factory · confirmed by user · —
@@ -29,6 +30,8 @@ Phase 3 DoD:
 - 2026-10-28 · Qdrant server bumped to v1.20.0 to match qdrant-client 1.20 · avoid client/server version warnings · —
 - 2026-10-28 · Interim `POST /ask` (plain RAG, no agent) for the Phase 2 demo · Phase 3 replaces it with `/chat` · —
 - 2026-10-28 · License: MIT · chosen by the student · Apache-2.0
+- 2026-10-28 · No SSE streaming in Phase 4 · first in the cut list; generation is ~1–2 s, embeddings dominate · —
+- 2026-10-28 · Demo warm-up via `/memory/search` in `scripts/demo_setup.sh` · fills the query-embedding cache so the recorded demo is fast; it is a real feature, explained in PITCH.md · —
 - 2026-10-28 · No `router` node: always retrieve (1 embedding) and let Nemotron choose tools · saves one LLM call per turn · router node from AGENTS.md §4 Phase 3
 - 2026-10-28 · Tools: search_knowledge, list_facts (read-only); remember_fact, forget_fact, run_code_in_sandbox (approval). `read_file` not built (not Core; sandbox already covers "do things") · —
 - 2026-10-28 · Pending confirmation: a new message on that thread returns 409 instead of a time-based expiry · simpler and safe (nothing runs without approve) · CONFIRM_TIMEOUT_S expiry
@@ -44,6 +47,8 @@ Phase 3 DoD:
 - 2026-10-27 · Hackathon ends in ~50 h → Core only, time-boxed phases, feature freeze 8 h before deadline · ~30 real working hours · Stretch items
 
 ## Verified Facts
+- 2026-10-28 · Model licenses (Hugging Face model cards): Nemotron 3 Super = NVIDIA Nemotron Open Model License (commercial use allowed); Qwen3-Embedding-8B = Apache-2.0.
+- 2026-10-28 · Bench 18:05: cached question ~0.9–1.0 s end to end → everything except the embedding call takes ~1 s.
 - 2026-10-28 · Bug found by the student: follow-up "¿de dónde sacaste esa info?" → search_knowledge embedding timed out 4×30 s → API 500 (plain text) → CLI crashed on JSON parse and left the chat. Fixed: query embeddings 20 s × 2 attempts; load_context and tool failures degrade gracefully; Nebius errors → JSON 503; CLI never exits on a failed turn; previous answer's cited sources are passed to the next turn.
 - 2026-10-28 · Nebius embedding latency was very variable from ~16:00 (UTC+1): 1–26 s per single-text request (host and container alike), while Nemotron chat stayed 1–2 s. Agent turns therefore took 5–70 s, dominated by embeddings. Query-embedding LRU cache added (repeated questions skip Nebius).
 - 2026-10-28 · Thinking on vs off for the agent node: similar latency (1–2 s) and both choose tools correctly; thinking OFF sometimes leaks English planning text into `content` ("We'll compute…"), so the agent keeps thinking ON.
@@ -91,3 +96,4 @@ Phase 3 DoD:
 - 2026-10-28 · Phase 3 complete: Docker sandbox (runner + image), tool registry + executor, LangGraph agent with approval interrupts, audit log, SQLite checkpoints, /chat + /confirm, `assistant chat` with approval panels, query-embedding cache, 50 unit + 12 integration tests · src/assistant/{agent,tools,sandbox,guardrails}/*, src/assistant/api/routes/chat.py, src/assistant/cli/*, docker/sandbox.Dockerfile, docker-compose.yml, tests/*
 - 2026-10-28 · Repo pushed to GitHub (private): https://github.com/javierrpdev/ai-personal-Assistant · SUBMISSION.md, MEMORY.md
 - 2026-10-28 · Robustness fixes after student testing: fast-fail query embeddings, graceful degradation, JSON 503 handler, resilient CLI chat loop, previous-sources memory; 53 unit tests · src/assistant/{agent,llm,memory,api,cli}/*, tests/unit/test_agent.py
+- 2026-10-28 · Phase 4: `assistant doctor`, scripts/bench.py, scripts/demo_setup.sh, final README (NVIDIA & Nebius, architecture, privacy, licenses), video script in PITCH.md, final description in SUBMISSION.md · src/assistant/cli/doctor.py, scripts/*, README.md, PITCH.md, SUBMISSION.md, AGENTS.md

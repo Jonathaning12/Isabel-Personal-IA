@@ -17,11 +17,11 @@
 |---|---|---|---|
 | R1 | Project built with the required tools and meets the project requirements | Nemotron 3 Super on Token Factory (runtime calls) | ✅ in progress |
 | R2 | **URL to a working demo, hosted app, or test build** | See §3 (decision pending) | ⬜ |
-| R3 | Text description of features and functionality | §4 draft below | ⬜ |
+| R3 | Text description of features and functionality | §4 below (final) | ✅ draft final |
 | R4 | **Public** repo URL (GitHub/GitLab/Bitbucket) with all source, assets, instructions | https://github.com/javierrpdev/ai-personal-Assistant (private for now; make public before submitting, then check the license shows in About) | 🟡 pushed, private |
 | R5 | **Open-source license file** detectable in the repo's About section | `LICENSE` (MIT) at the repo root | ✅ file added; verify on GitHub once public |
-| R6 | README with setup instructions and clear run guidance | `README.md` quickstart, tested on a clean clone | 🟡 basic version exists |
-| R7 | README **highlights NVIDIA Nemotron usage**, **where Token Factory accelerated the workflow**, and any other Nebius tools | Dedicated README section (§5 below) | ⬜ |
+| R6 | README with setup instructions and clear run guidance | `README.md`: prerequisites, quickstart, usage, tests, `assistant doctor`, `scripts/demo_setup.sh` | ✅ (re-test on a clean clone before submitting) |
+| R7 | README **highlights NVIDIA Nemotron usage**, **where Token Factory accelerated the workflow**, and any other Nebius tools | README section "How we use NVIDIA & Nebius" | ✅ |
 | R8 | **Demo video < 3 min**, public on **YouTube**, showing the project running on its intended device; no third-party trademarks or copyrighted music | Screen recording of the terminal demo on the Mac; no music, or royalty-free only | ⬜ |
 | R9 | Identify the track | **Personal AI Track** | ✅ |
 | R10 | **Feedback** on Token Factory, AI Cloud, NVIDIA tools/models | §6 feedback log (fill in during development) | 🟡 logging |
@@ -30,7 +30,7 @@
 ## 2. Implications for engineering
 - **Judges must be able to install and run it.** The README must state the prerequisites explicitly: Docker, `uv`, and **their own Nebius API key** in `.env`. `uv sync` + `docker compose up -d` must work on a clean clone (already checked in Phase 1).
 - **"Works as shown in the video":** record the video only from the final, committed version. Never show features that are not merged.
-- **License compatibility:** choose a permissive license (MIT/Apache-2.0). Record the model licenses in the README: Nemotron (NVIDIA Open Model License) and Qwen3-Embedding-8B (verify license on its model card before submitting).
+- **License compatibility:** project is MIT. Model licenses verified on their Hugging Face model cards (2026-10-28): Nemotron 3 Super = NVIDIA Nemotron Open Model License (commercial use allowed); Qwen3-Embedding-8B = Apache-2.0. Both are listed in the README.
 - **Never commit `.env`** when the repo becomes public. Gitleaks pre-commit is active. Before making the repo public, run `uv run pre-commit run gitleaks --all-files` and scan the git history.
 
 ## 3. Demo URL (R2) — decision pending
@@ -39,10 +39,16 @@ The app is a **local terminal (CLI) app**: privacy comes from keeping storage lo
 - **B: hosted demo** on Nebius AI Cloud (DevPod) with a minimal web chat page. Stronger "always-on" story, and uses one more Nebius service. Costs about 3–5 h, so only if organizers say a test build is not enough.
 - Action: ask the organizers whether a GitHub Release (test build) is acceptable for a local CLI app.
 
-## 4. Text description (draft, finalize in Phase 4)
-*Private, always-on personal AI assistant for the terminal. It ingests your notes and documents into a local vector database (Qdrant), answers questions with citations, remembers facts about you across sessions, and can write and run small Python scripts in an isolated Docker sandbox — always asking for your approval first. All reasoning runs on NVIDIA Nemotron 3 Super via Nebius Token Factory; all storage stays on your machine.*
+## 4. Text description (final)
+**Personal AI Assistant: private, agentic, human-in-the-loop.**
 
-## 5. README section to write: "How we use NVIDIA & Nebius" (R7)
+A personal AI assistant for the terminal that knows *your* life without uploading it to anyone's cloud. It ingests your notes and documents (Markdown, text, PDF) into a local vector database (Qdrant) and answers questions **citing the exact note** each fact came from. It says "I didn't find it" instead of inventing. It remembers your preferences across sessions, and you can list and delete what it knows.
+
+It is a **LangGraph agent** powered by **NVIDIA Nemotron 3 Super (120B) on Nebius Token Factory**. It decides when to search your notes, remember a fact, or write and run Python code. Every action with side effects **pauses and asks for your approval**, showing the exact code and its limits. Approved code runs in a locked-down Docker sandbox: no network, no access to your files, read-only, non-root, with CPU, memory and time limits. Rejections are enforced in code, every decision is written to an audit log, and prompt-injection attempts in documents are flagged and cannot bypass approval.
+
+Built with FastAPI, LangGraph, Qdrant and Docker. Tested with 53 unit and 12 integration tests, and a retrieval evaluation (recall@5 = 1.00 on paraphrased questions). All inference (chat and embeddings) runs on Nebius Token Factory; all storage stays local. MIT licensed.
+
+## 5. README section "How we use NVIDIA & Nebius" (R7) — ✅ written
 Points to cover:
 - **Nemotron 3 Super 120B** (`nvidia/nemotron-3-super-120b-a12b`): every answer, every agent decision, every tool call. Reasoning toggled per task (on for agent decisions, off for routing and extraction).
 - **Token Factory**: an OpenAI-compatible API, so the official `openai` SDK works by changing only the base URL. No GPU management. We compared 4 Nemotron models in minutes through one API (catalog check + tool-calling + latency test).
