@@ -55,12 +55,15 @@ def _log_retry(state: RetryCallState) -> None:
 
 
 async def call_with_retries[T](
-    fn: Callable[[], Awaitable[T]], *, wait: wait_base | None = None
+    fn: Callable[[], Awaitable[T]],
+    *,
+    wait: wait_base | None = None,
+    max_attempts: int = MAX_ATTEMPTS,
 ) -> T:
     """Run an async Nebius call, retrying transient errors with exponential backoff."""
     retrying = AsyncRetrying(
         retry=retry_if_exception_type(RETRYABLE_ERRORS),
-        stop=stop_after_attempt(MAX_ATTEMPTS),
+        stop=stop_after_attempt(max_attempts),
         wait=wait or DEFAULT_WAIT,
         before_sleep=_log_retry,
         reraise=True,

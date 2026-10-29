@@ -240,3 +240,69 @@ async def test_conversation_survives_restart(make_agent, tmp_path):
     history = chat.calls[0]["messages"]
     assert [m["role"] for m in history[1:]] == ["user", "assistant", "user"]
     assert history[2]["content"] == "Me llamo Asistente."
+
+
+class FailingEmbedder:
+    """Simulates Nebius embeddings timing out."""
+
+    async def embed(self, texts, **kwargs):
+        from openai import APITimeoutError
+
+        raise APITimeoutError(request=None)  # type: ignore[arg-type]
+
+
+async def test_agent_still_answers_when_note_search_fails(store, settings, tmp_path):
+    chat = ScriptedChat(reply("Ahora mismo no puedo buscar en tus notas."))
+    deps = AgentDeps(
+        chat=chat,
+        retriever=Retriever(store, FailingEmbedder(), settings),
+        facts=FactMemory(store, FailingEmbedder(), chat, settings),
+        sandbox=FakeSandbox(),
+        audit=AuditLog(tmp_path / "audit.log"),
+        settings=settings,
+    )
+    graph = build_graph(deps, InMemorySaver())
+
+    result = await graph.ainvoke(user("¿de dónde sacaste eso?"), config())
+
+    assert result["messages"][-1]["content"] == "Ahora mismo no puedo buscar en tus notas."
+    assert "temporarily unavailable" in chat.calls[0]["messages"][0]["content"]
+
+
+async def test_failing_tool_is_reported_to_the_model_not_raised(store, settings, tmp_path):
+    chat = ScriptedChat(
+        reply(calls=[tool_call("search_knowledge", {"query": "gimnasio"})]),
+        reply("La búsqueda falló, inténtalo luego."),
+    )
+    retriever = Retriever(store, FailingEmbedder(), settings)
+    deps = AgentDeps(
+        chat=chat,
+        retriever=retriever,
+        facts=FactMemory(store, FailingEmbedder(), chat, settings),
+        sandbox=FakeSandbox(),
+        audit=AuditLog(tmp_path / "audit.log"),
+        settings=settings,
+    )
+    graph = build_graph(deps, InMemorySaver())
+
+    result = await graph.ainvoke(user("busca"), config())
+
+    assert result["actions"][0]["result"]["status"] == "error"
+    assert result["messages"][-1]["content"] == "La búsqueda falló, inténtalo luego."
+
+
+async def test_previous_sources_are_available_for_follow_up(
+    make_agent, store, fake_embedder, settings
+):
+    await Ingestor(store, fake_embedder, settings).ingest(
+        "gimnasio.txt", b"Lunes: pierna. Miercoles: empuje."
+    )
+    settings.retrieval_min_score = -1.0  # fake vectors: make sure the note is retrieved
+    graph, chat, _ = make_agent(reply("Los lunes entrenas pierna [1]."))
+
+    await graph.ainvoke(user("¿Qué entreno los lunes?"), config())
+    await graph.ainvoke(user("¿De dónde sacaste esa info?"), config())
+
+    second_system_prompt = chat.calls[1]["messages"][0]["content"]
+    assert "Sources you cited in your previous answer" in second_system_prompt
+    assert "[1] gimnasio.txt" in second_system_prompt

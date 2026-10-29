@@ -44,6 +44,7 @@ Phase 3 DoD:
 - 2026-10-27 · Hackathon ends in ~50 h → Core only, time-boxed phases, feature freeze 8 h before deadline · ~30 real working hours · Stretch items
 
 ## Verified Facts
+- 2026-10-28 · Bug found by the student: follow-up "¿de dónde sacaste esa info?" → search_knowledge embedding timed out 4×30 s → API 500 (plain text) → CLI crashed on JSON parse and left the chat. Fixed: query embeddings 20 s × 2 attempts; load_context and tool failures degrade gracefully; Nebius errors → JSON 503; CLI never exits on a failed turn; previous answer's cited sources are passed to the next turn.
 - 2026-10-28 · Nebius embedding latency was very variable from ~16:00 (UTC+1): 1–26 s per single-text request (host and container alike), while Nemotron chat stayed 1–2 s. Agent turns therefore took 5–70 s, dominated by embeddings. Query-embedding LRU cache added (repeated questions skip Nebius).
 - 2026-10-28 · Thinking on vs off for the agent node: similar latency (1–2 s) and both choose tools correctly; thinking OFF sometimes leaks English planning text into `content` ("We'll compute…"), so the agent keeps thinking ON.
 - 2026-10-28 · Despite the prompt, after a rejection Nemotron produced the result "by hand" → now enforced in code: if all actions of a step are rejected, the turn ends with a fixed reply and no LLM call.
@@ -70,6 +71,7 @@ Phase 3 DoD:
 - Is a GitHub Release (test build) acceptable as the required demo URL, or is a hosted app needed? (SUBMISSION.md §3)
 
 ## Known Issues / Tech Debt
+- If Nebius embeddings are down, the agent answers without notes (and says so) instead of failing.
 - Agent latency is dominated by Nebius embedding latency when the service is loaded (see Verified Facts). No streaming yet.
 - The API container has Docker socket access (needed to start sandboxes). Documented in README/PITCH as a trade-off.
 - Model sometimes slips perspective ("Te pedí" instead of "Me pediste") when summarizing history.
@@ -88,3 +90,4 @@ Phase 3 DoD:
 - 2026-10-28 · Phase 2 complete: sanitize, loaders (md/txt/pdf), chunking, MemoryStore (Qdrant), Ingestor (idempotent), Retriever, FactMemory, RAG answer with citations, memory API routes, Typer CLI (ingest/ask/search/remember/memory), fixtures + eval script, 38 unit + 3 integration tests, MIT LICENSE · src/assistant/{guardrails,ingest,memory,agent,cli}/*, src/assistant/api/routes/memory.py, scripts/eval_retrieval.py, tests/*
 - 2026-10-28 · Phase 3 complete: Docker sandbox (runner + image), tool registry + executor, LangGraph agent with approval interrupts, audit log, SQLite checkpoints, /chat + /confirm, `assistant chat` with approval panels, query-embedding cache, 50 unit + 12 integration tests · src/assistant/{agent,tools,sandbox,guardrails}/*, src/assistant/api/routes/chat.py, src/assistant/cli/*, docker/sandbox.Dockerfile, docker-compose.yml, tests/*
 - 2026-10-28 · Repo pushed to GitHub (private): https://github.com/javierrpdev/ai-personal-Assistant · SUBMISSION.md, MEMORY.md
+- 2026-10-28 · Robustness fixes after student testing: fast-fail query embeddings, graceful degradation, JSON 503 handler, resilient CLI chat loop, previous-sources memory; 53 unit tests · src/assistant/{agent,llm,memory,api,cli}/*, tests/unit/test_agent.py

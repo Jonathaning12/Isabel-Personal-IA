@@ -6,6 +6,10 @@ API_UNREACHABLE = (
     "(o en desarrollo: [bold]uv run uvicorn assistant.api.main:app --reload[/])"
 )
 API_ERROR = "[red]✘ La API respondió con un error {status}:[/] {detail}"
+NEBIUS_UNAVAILABLE = (
+    "[yellow]⚠ Nebius (el servicio de IA) no respondió a tiempo. "
+    "Espera unos segundos y vuelve a intentarlo.[/]"
+)
 NO_FILES = "[yellow]No encontré archivos compatibles (.md, .txt, .pdf) en esas rutas.[/]"
 INGEST_TITLE = "Ingesta de documentos"
 INGEST_SUMMARY = (
@@ -38,6 +42,7 @@ CHAT_RESUME = "[dim]Para retomarla: assistant chat --thread {thread}[/]"
 CHAT_PROMPT = "[bold cyan]Tú[/]"
 CHAT_THINKING = "Pensando…"
 CHAT_TIMEOUT = "[red]✘ La respuesta tardó demasiado. Inténtalo de nuevo.[/]"
+CHAT_UNEXPECTED = "[red]✘ Error inesperado ({error}). La conversación sigue abierta.[/]"
 CONFIRM_TITLES = {
     "run_code_in_sandbox": "⚠️  El asistente quiere ejecutar este código",
     "remember_fact": "⚠️  El asistente quiere guardar esto en tu memoria",

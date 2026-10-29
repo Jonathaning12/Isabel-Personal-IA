@@ -96,6 +96,9 @@ Lo probamos con Nemotron real: se negó a obedecer. Pero no confiamos solo en es
 **¿Qué pasa si rechazo una acción?**
 No se ejecuta nada y el turno termina con un mensaje fijo, **sin volver a llamar al modelo**. Lo hicimos así porque en las pruebas Nemotron, tras un rechazo, a veces daba el resultado "de cabeza". Ahora está garantizado por código.
 
+**¿Qué pasa si Nebius deja de responder en mitad de una conversación?**
+Lo vivimos en las pruebas: el servicio de embeddings tardó más de 30 s varias veces seguidas y, en esa primera versión, el chat se cerró. Lo arreglamos en tres capas: (1) la búsqueda falla rápido (2 intentos de 20 s) en vez de bloquear minutos; (2) si la búsqueda falla, el agente **sigue funcionando sin tus notas y te lo dice**, en lugar de inventar o romperse; (3) la terminal nunca se cierra por un error en un mensaje: te avisa y puedes seguir. Hay tests que simulan la caída de Nebius.
+
 **¿Por qué tarda a veces?**
 Medimos cada llamada. Nemotron responde en 1–2 s, pero el servicio de embeddings de Nebius tuvo picos de hasta 26 s durante el hackathon (por carga). Añadimos una caché para preguntas repetidas y lo reportamos como feedback a Nebius.
 
@@ -136,6 +139,7 @@ Con `uv sync`. El archivo `uv.lock` fija las versiones exactas de todas las depe
 | **Human-in-the-loop** | Un humano aprueba o rechaza las acciones importantes del agente antes de que ocurran. | `POST /chat/{id}/confirm` |
 | **Sandbox** | Entorno aislado donde se ejecuta código no confiable sin poder dañar nada fuera. | `src/assistant/sandbox/docker_runner.py` |
 | **Checkpoint** | Una "foto" del estado de la conversación guardada en disco, para retomarla después. | `data/checkpoints.sqlite` |
+| **Degradación elegante** | Cuando una parte falla (por ejemplo, la búsqueda), el sistema sigue funcionando con menos capacidades y avisa, en lugar de romperse. | `graph.py` → `load_context` |
 | **Token** | El trozo de texto con el que trabaja el modelo (aprox. ¾ de una palabra). Los límites y costes se miden en tokens. | `.env` → `MAX_COMPLETION_TOKENS` |
 
 ## Cómo comprobarlo tú mismo (estado actual)

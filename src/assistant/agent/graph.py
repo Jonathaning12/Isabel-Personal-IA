@@ -15,6 +15,8 @@ State is checkpointed per thread_id (SQLite), so conversations survive restarts.
 """
 
 import json
+import logging
+import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -28,6 +30,8 @@ from assistant.agent.prompts import (
     ALL_REJECTED_ANSWER,
     FACTS_BLOCK,
     NO_NOTES_CONTEXT,
+    NOTES_UNAVAILABLE,
+    PREVIOUS_SOURCES_BLOCK,
 )
 from assistant.agent.rag import format_context, normalize_citations
 from assistant.agent.state import AgentState
@@ -40,6 +44,7 @@ from assistant.tools.executor import ToolExecutor
 from assistant.tools.registry import TOOLS, openai_tool_specs
 
 APPROVE = "approve"
+logger = logging.getLogger("assistant.agent")
 
 
 @dataclass
@@ -52,11 +57,40 @@ class AgentDeps:
     settings: Settings
 
 
-def build_system_prompt(facts: list[str], context: list[dict[str, Any]]) -> str:
+def build_system_prompt(
+    facts: list[str],
+    context: list[dict[str, Any]],
+    *,
+    previous_sources: list[str] | None = None,
+    notes_unavailable: bool = False,
+) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
+    sources_block = (
+        PREVIOUS_SOURCES_BLOCK.format(sources="\n".join(f"- {s}" for s in previous_sources))
+        if previous_sources
+        else ""
+    )
     citations = [Citation(**c) for c in context]
-    context_block = format_context(citations) if citations else NO_NOTES_CONTEXT
-    return AGENT_SYSTEM.format(facts_block=facts_block, context_block=context_block)
+    if citations:
+        context_block = format_context(citations)
+    else:
+        context_block = NOTES_UNAVAILABLE if notes_unavailable else NO_NOTES_CONTEXT
+    return AGENT_SYSTEM.format(
+        facts_block=facts_block,
+        previous_sources_block=sources_block,
+        context_block=context_block,
+    )
+
+
+def cited_sources(answer: str, context: list[dict[str, Any]]) -> list[str]:
+    """Human-readable list of the sources an answer cited, e.g. '[1] notes/gym.txt › Lunes'."""
+    numbers = {int(n) for n in re.findall(r"\[(\d+)\]", answer)}
+    sources = []
+    for c in context:
+        if c["n"] in numbers:
+            section = f" › {c['heading']}" if c.get("heading") else ""
+            sources.append(f"[{c['n']}] {c['source_path']}{section}")
+    return sources
 
 
 def _summary(result: dict[str, Any]) -> str:
@@ -70,21 +104,40 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
     tool_specs = openai_tool_specs()
 
     async def load_context(state: AgentState) -> dict[str, Any]:
+        # Remember which sources the previous answer cited, before this turn's search
+        # replaces the context ("where did you get that?").
+        previous = [m for m in state["messages"][:-1] if m["role"] == "assistant"]
+        previous_sources = (
+            cited_sources(previous[-1]["content"], state.get("context", [])) if previous else []
+        )
+
         question = state["messages"][-1]["content"]
-        vector = await deps.retriever.embed_query(question)
-        citations = await deps.retriever.search_by_vector(vector)
-        facts = await deps.facts.relevant(vector)
+        try:
+            vector = await deps.retriever.embed_query(question)
+            citations = [asdict(c) for c in await deps.retriever.search_by_vector(vector)]
+            facts = await deps.facts.relevant(vector)
+            unavailable = False
+        except Exception as exc:  # degrade gracefully: answer without notes
+            logger.warning("load_context_failed error=%s", type(exc).__name__)
+            citations, facts, unavailable = [], [], True
         return {
-            "context": [asdict(c) for c in citations],
+            "context": citations,
             "facts": facts,
             "actions": [],
             "iterations": 0,
+            "notes_unavailable": unavailable,
+            "previous_sources": previous_sources,
         }
 
     async def agent(state: AgentState) -> dict[str, Any]:
         # Loop guard: after too many round trips, force a final answer without tools.
         allow_tools = state["iterations"] < deps.settings.max_agent_iterations
-        system = build_system_prompt(state["facts"], state["context"])
+        system = build_system_prompt(
+            state["facts"],
+            state["context"],
+            previous_sources=state.get("previous_sources"),
+            notes_unavailable=state.get("notes_unavailable", False),
+        )
         reply = await deps.chat.complete(
             [{"role": "system", "content": system}, *state["messages"]],
             tools=tool_specs if allow_tools else None,
@@ -158,11 +211,19 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                 }
             else:
                 decision = APPROVE if tool.side_effect else None
-                output = await executor.execute(
-                    name, args, citation_offset=offset + len(new_citations)
-                )
-                result = output.result
-                new_citations += output.new_citations
+                try:
+                    output = await executor.execute(
+                        name, args, citation_offset=offset + len(new_citations)
+                    )
+                    result = output.result
+                    new_citations += output.new_citations
+                except Exception as exc:  # e.g. Nebius timeout: report it to the model
+                    logger.warning("tool_failed tool=%s error=%s", name, type(exc).__name__)
+                    result = {
+                        "status": "error",
+                        "error": f"The tool failed ({type(exc).__name__}). Tell the user to "
+                        "try again in a moment.",
+                    }
             if decision is not None:
                 deps.audit.record(
                     thread_id=thread_id,

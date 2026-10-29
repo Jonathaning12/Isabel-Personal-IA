@@ -45,7 +45,13 @@ class Retriever:
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key]
-        vector = (await self._embedder.embed([QUERY_INSTRUCTION + key]))[0]
+        vector = (
+            await self._embedder.embed(
+                [QUERY_INSTRUCTION + key],
+                timeout_s=self._settings.query_embed_timeout_s,
+                max_attempts=self._settings.query_embed_attempts,
+            )
+        )[0]
         self._cache[key] = vector
         if len(self._cache) > QUERY_CACHE_SIZE:
             self._cache.popitem(last=False)

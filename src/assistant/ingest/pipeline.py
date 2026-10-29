@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePath
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from qdrant_client import models
 
@@ -27,7 +27,7 @@ PIPELINE_VERSION = "2"
 
 
 class SupportsEmbed(Protocol):
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
+    async def embed(self, texts: list[str], **kwargs: Any) -> list[list[float]]: ...
 
 
 @dataclass

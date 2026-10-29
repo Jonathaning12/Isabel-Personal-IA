@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     max_completion_tokens: int = Field(default=2048, gt=0)
     llm_timeout_s: float = 60.0
     embed_timeout_s: float = 30.0
+    # The user's question is embedded on every chat turn: fail fast if Nebius is slow.
+    query_embed_timeout_s: float = 20.0
+    query_embed_attempts: int = Field(default=2, gt=0)
 
     # Local storage
     qdrant_url: str = "http://localhost:6333"

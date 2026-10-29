@@ -38,8 +38,14 @@ def _request(method: str, path: str, *, timeout: float = 120, **kwargs: Any) -> 
         console.print(msg.API_UNREACHABLE.format(url=API_URL))
         raise typer.Exit(1) from None
     if response.status_code >= 400:
-        detail = response.json().get("detail") if response.content else ""
-        console.print(msg.API_ERROR.format(status=response.status_code, detail=detail))
+        try:
+            detail = response.json().get("detail", "")
+        except ValueError:  # not JSON (e.g. a plain "Internal Server Error")
+            detail = response.text[:200]
+        if response.status_code == 503 and detail == "nebius_unavailable":
+            console.print(msg.NEBIUS_UNAVAILABLE)
+        else:
+            console.print(msg.API_ERROR.format(status=response.status_code, detail=detail))
         raise typer.Exit(1)
     return response.json()
 
@@ -284,4 +290,6 @@ def chat(
             continue  # the error was already printed; keep the conversation going
         except httpx.TimeoutException:
             console.print(msg.CHAT_TIMEOUT)
+        except Exception as exc:  # never lose the conversation because of one bad turn
+            console.print(msg.CHAT_UNEXPECTED.format(error=type(exc).__name__))
     console.print(msg.CHAT_RESUME.format(thread=thread_id))

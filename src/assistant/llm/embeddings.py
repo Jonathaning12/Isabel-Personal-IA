@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 from tenacity.wait import wait_base
 
 from assistant.config import Settings
-from assistant.llm.client import call_with_retries
+from assistant.llm.client import MAX_ATTEMPTS, call_with_retries
 
 logger = logging.getLogger("assistant.llm")
 
@@ -26,8 +26,18 @@ class Embedder:
         self._settings = settings
         self._wait = wait
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed texts in batches of EMBED_BATCH_SIZE, preserving input order."""
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        timeout_s: float | None = None,
+        max_attempts: int = MAX_ATTEMPTS,
+    ) -> list[list[float]]:
+        """Embed texts in batches of EMBED_BATCH_SIZE, preserving input order.
+
+        Interactive paths (the user's question) pass a shorter timeout and fewer attempts,
+        so a slow embedding service fails fast instead of blocking the chat for minutes.
+        """
         vectors: list[list[float]] = []
         size = self._settings.embed_batch_size
         for i in range(0, len(texts), size):
@@ -37,9 +47,10 @@ class Embedder:
                 lambda batch=batch: self._client.embeddings.create(
                     model=self._settings.embed_model,
                     input=batch,
-                    timeout=self._settings.embed_timeout_s,
+                    timeout=timeout_s or self._settings.embed_timeout_s,
                 ),
                 wait=self._wait,
+                max_attempts=max_attempts,
             )
             logger.info(
                 "nebius_embed model=%s batch=%d latency_ms=%d",

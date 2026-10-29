@@ -9,8 +9,10 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from openai import APIConnectionError, APIStatusError
 
 from assistant.agent.graph import AgentDeps, build_graph
 from assistant.api.routes import chat as chat_routes
@@ -68,6 +70,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Personal AI Assistant", lifespan=lifespan)
+
+
+@app.exception_handler(APIConnectionError)  # includes timeouts
+@app.exception_handler(APIStatusError)
+async def nebius_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    """Nebius failed after all retries: return a clear JSON 503 instead of a bare 500."""
+    logging.getLogger("assistant.api").warning("nebius_unavailable error=%s", type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "nebius_unavailable", "error": type(exc).__name__},
+    )
+
+
 app.include_router(health.router)
 app.include_router(memory.router)
 app.include_router(chat_routes.router)

@@ -38,7 +38,7 @@ class FakeEmbedder:
         self.dim = dim
         self.calls = 0
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(self, texts: list[str], **kwargs) -> list[list[float]]:
         import hashlib
 
         self.calls += 1
