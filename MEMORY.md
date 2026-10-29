@@ -47,10 +47,11 @@ Phase 4 DoD (adapted):
 - 2026-10-27 · Hackathon ends in ~50 h → Core only, time-boxed phases, feature freeze 8 h before deadline · ~30 real working hours · Stretch items
 
 ## Verified Facts
+- 2026-10-28 · Official deadline (Devpost rules): **Oct 30, 2026 10:00 PDT = Fri 11:00 CST (student's TZ, UTC-6)**; ~40 h left at 18:18 CST Oct 28. Judging Dec 1–15. Criteria (equal weight): Technological Implementation, Design, Potential Impact, Quality of the Idea. Track wording: "memory, reusable skills, user-controlled tools".
 - 2026-10-28 · Model licenses (Hugging Face model cards): Nemotron 3 Super = NVIDIA Nemotron Open Model License (commercial use allowed); Qwen3-Embedding-8B = Apache-2.0.
 - 2026-10-28 · Bench 18:05: cached question ~0.9–1.0 s end to end → everything except the embedding call takes ~1 s.
 - 2026-10-28 · Bug found by the student: follow-up "¿de dónde sacaste esa info?" → search_knowledge embedding timed out 4×30 s → API 500 (plain text) → CLI crashed on JSON parse and left the chat. Fixed: query embeddings 20 s × 2 attempts; load_context and tool failures degrade gracefully; Nebius errors → JSON 503; CLI never exits on a failed turn; previous answer's cited sources are passed to the next turn.
-- 2026-10-28 · Nebius embedding latency was very variable from ~16:00 (UTC+1): 1–26 s per single-text request (host and container alike), while Nemotron chat stayed 1–2 s. Agent turns therefore took 5–70 s, dominated by embeddings. Query-embedding LRU cache added (repeated questions skip Nebius).
+- 2026-10-28 · Nebius embedding latency was very variable from ~16:00 CST (UTC-6): 1–26 s per single-text request (host and container alike), while Nemotron chat stayed 1–2 s. Agent turns therefore took 5–70 s, dominated by embeddings. Query-embedding LRU cache added (repeated questions skip Nebius).
 - 2026-10-28 · Thinking on vs off for the agent node: similar latency (1–2 s) and both choose tools correctly; thinking OFF sometimes leaks English planning text into `content` ("We'll compute…"), so the agent keeps thinking ON.
 - 2026-10-28 · Despite the prompt, after a rejection Nemotron produced the result "by hand" → now enforced in code: if all actions of a step are rejected, the turn ends with a fixed reply and no LLM call.
 - 2026-10-28 · Nemotron asked for permission in text before calling remember_fact → prompt now says the system asks automatically.

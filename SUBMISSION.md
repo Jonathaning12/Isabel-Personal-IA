@@ -3,6 +3,14 @@
 > Official hackathon rules (summarized from the organizers' text) and the submission checklist.
 > Written in English because the submission is read by the judges. Keep it current: it feeds the submission form.
 
+## 0. Key facts from the official Devpost rules page (https://nebiusglobalaihackathon.devpost.com/rules)
+- **Deadline: Oct 30, 2026 @ 10:00 am PDT = Friday Oct 30, 11:00 CST (UTC-6, the student's time zone) = 17:00 UTC.** Plan to submit by Thursday night or Friday 09:00 CST at the latest.
+- Judging: Dec 1–15, 2026. **The repo, the Release and the instructions must still work then.**
+- **Personal AI track:** "build an always-on, private assistant that works for you while keeping your data under your control." A secondary source describes it as "a private, always-on assistant with **memory, reusable skills, and user-controlled tools**".
+- **Judging criteria, weighted equally:** Technological Implementation · Design · Potential Impact · Quality of the Idea. Judges include engineers from NVIDIA and Nebius, and staff from Tavily.
+- Demo URL: "a working demo, hosted application, or test build". The rules give no further detail, so a GitHub Release (test build) with clear instructions is our plan. Organizers have been asked.
+- Source note: the rules page blocks automated reading. These facts come from the page's search snippet and a web search (2026-10-28); check them on the page before submitting.
+
 ## 1. Official requirements (source: hackathon rules, received 2026-10-28)
 
 ### Project requirements
@@ -65,6 +73,6 @@ Write down real friction and praise as it happens. Facts only, with dates.
 - 2026-10-28 · ⚠️ Nemotron 3 Super cites sources with full-width brackets (【1】, 【1†L3】) even when told to use [1]; we normalize them in code.
 - 2026-10-28 · 👍 Nemotron 3 Super handled a prompt-injection attempt inside retrieved context well: it described the text and refused to follow it.
 - 2026-10-28 · 👍 Qwen3-Embedding-8B on Token Factory gave recall@5 = 1.00 on our Spanish paraphrased test set; a 4096-dim vector in ~0.5 s per batch.
-- 2026-10-28 · 👎 Embedding latency on Token Factory was highly variable in the afternoon/evening (UTC+1) of 2026-10-28: single-text `Qwen/Qwen3-Embedding-8B` requests took 1–26 s (median ~8 s), versus < 1 s the night before. Chat completions on Nemotron 3 Super stayed fast (1–2 s) at the same time. We added a query-embedding cache to soften it; a status page or published latency SLOs per model would help.
+- 2026-10-28 · 👎 Embedding latency on Token Factory was highly variable in the afternoon/evening of 2026-10-28 (22:00–00:30 UTC): single-text `Qwen/Qwen3-Embedding-8B` requests took 1–26 s (median ~8 s), versus < 1 s the night before. Chat completions on Nemotron 3 Super stayed fast (1–2 s) at the same time. We added a query-embedding cache to soften it; a status page or published latency SLOs per model would help.
 - 2026-10-28 · 👍 Nemotron 3 Super tool calling in an agent loop was reliable: correct tool choice for code, memory and chat, valid JSON arguments, and it respected rejected actions.
 - 2026-10-28 · ℹ️ `/v1/models` exposes `shutdown_date` but no model type (chat vs embedding) or context length. Adding them would make model selection easier.

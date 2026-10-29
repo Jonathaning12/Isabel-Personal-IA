@@ -272,7 +272,7 @@ The organizers' rules are summarized in **`SUBMISSION.md`**, which is the source
 
 Do the phases in order. Each phase ends only when every Definition of Done (DoD) box can be checked. Mirror the checkbox state in `MEMORY.md → Current Phase`.
 
-### 4.0 Time budget (hackathon ends ~50 h after kickoff, deadline ≈ 2026-10-29)
+### 4.0 Time budget (official deadline: Oct 30, 2026 10:00 PDT = 11:00 CST, the student's time zone)
 
 50 hours on the clock is **about 30 hours of real work** once sleep and meals are subtracted. **Only Core is in scope.** Stretch is allowed only if every phase is done and more than 6 h remain.
 
