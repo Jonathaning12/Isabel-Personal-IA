@@ -32,11 +32,24 @@ services:
       # Inside Docker, Qdrant is reached by its service name, not localhost.
       QDRANT_URL: http://qdrant:6333
       DATA_DIR: /app/data
+      # The Obsidian vault is mounted at /vault only when OBSIDIAN_VAULT is set in .env.
+      VAULT_DIR: ${OBSIDIAN_VAULT:+/vault}
+      # Your projects folder (e.g. Documents) at /projects, only when PROJECTS_HOST is set.
+      PROJECTS_DIR: ${PROJECTS_HOST:+/projects}
+      PROJECTS_HOST_PATH: ${PROJECTS_HOST:-}
+      # Your git identity (name/email for commits), read-only, when GIT_CONFIG_HOST is set.
+      GIT_CONFIG_GLOBAL: ${GIT_CONFIG_HOST:+/home/app/.gitconfig-host}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       # Conversations (checkpoints.sqlite) and the audit log stay on your disk.
       - ./data:/app/data
+      # Your Obsidian vault (read freely; writes always need your approval in the app/CLI).
+      # Without OBSIDIAN_VAULT an empty placeholder folder is mounted and notes are disabled.
+      - "${OBSIDIAN_VAULT:-./data/no-vault}:/vault"
+      # Folders and git repos: reading is free; create folder / commit / push need approval.
+      - "${PROJECTS_HOST:-./data/no-projects}:/projects"
+      - "${GIT_CONFIG_HOST:-./data/no-gitconfig}:/home/app/.gitconfig-host:ro"
       # The API needs Docker to start sandbox containers. This gives the API (trusted code)
       # control of Docker; the agent-written code runs in the sandbox, which gets nothing.
       - /var/run/docker.sock:/var/run/docker.sock

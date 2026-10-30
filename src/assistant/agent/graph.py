@@ -26,6 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
+from assistant.agent.clock import describe_now
 from assistant.agent.prompts import (
     AGENT_SYSTEM,
     ALL_REJECTED_ANSWER,
@@ -43,10 +44,13 @@ from assistant.memory.facts import FactMemory, SupportsComplete
 from assistant.memory.retrieval import Citation, Retriever
 from assistant.sandbox.base import SandboxRunner
 from assistant.skills.store import Skill, SkillStore, build_program
-from assistant.tools.executor import ToolExecutor
-from assistant.tools.registry import TOOLS, openai_tool_specs
+from assistant.tools.executor import SupportsIngest, ToolExecutor
+from assistant.tools.registry import TOOLS, openai_tool_specs, requires_approval
+from assistant.vault.notes import Vault
+from assistant.workspace.projects import Workspace
 
 APPROVE = "approve"
+CLIENT_ACTION = "client_action"  # interrupt kind for actions run by the desktop app
 logger = logging.getLogger("assistant.agent")
 
 
@@ -59,6 +63,9 @@ class AgentDeps:
     audit: AuditLog
     settings: Settings
     skills: SkillStore
+    vault: Vault | None = None  # the user's Obsidian vault, if configured
+    ingestor: SupportsIngest | None = None  # re-indexes notes after write_note
+    workspace: Workspace | None = None  # the user's projects folder (folders, git)
 
 
 def build_system_prompt(
@@ -68,6 +75,9 @@ def build_system_prompt(
     previous_sources: list[str] | None = None,
     notes_unavailable: bool = False,
     skills: list[Skill] | None = None,
+    now: str | None = None,
+    project: str | None = None,
+    projects_name: str = "Documentos",
 ) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
     sources_block = (
@@ -90,6 +100,14 @@ def build_system_prompt(
     else:
         context_block = NOTES_UNAVAILABLE if notes_unavailable else NO_NOTES_CONTEXT
     return AGENT_SYSTEM.format(
+        now=now or describe_now(None, None),
+        projects_name=projects_name,
+        project_line=(
+            f'The user\'s CURRENT PROJECT is "{project}": "esta carpeta", "este proyecto" or '
+            "a git request without a repo name means this one."
+            if project
+            else "No current project is selected: if the user says 'esta carpeta', ask which one."
+        ),
         facts_block=facts_block,
         skills_block=skills_block,
         previous_sources_block=sources_block,
@@ -135,7 +153,36 @@ def _summary(result: dict[str, Any]) -> str:
 
 
 def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
-    executor = ToolExecutor(deps.retriever, deps.facts, deps.sandbox, deps.skills)
+    executor = ToolExecutor(
+        deps.retriever,
+        deps.facts,
+        deps.sandbox,
+        deps.skills,
+        deps.vault,
+        deps.ingestor,
+        deps.workspace,
+        deps.settings,
+    )
+
+    async def preview(name: str, args: Any) -> dict[str, Any] | None:
+        """What a project action will touch, shown in its approval. It is part of the
+        fingerprint: if the repo or folder changes before the user decides, it goes stale."""
+        ws = deps.workspace
+        if ws is None:
+            return None
+        if name == "create_folder":
+            ws.check_new_folder(args.path)
+            return {"folder": {"root": deps.settings.projects_name, "path": args.path.strip()}}
+        if name in ("git_commit", "git_push"):
+            status = await ws.status(args.repo, fetch=False)
+            keys = (
+                ["branch", "uncommitted_changes"]
+                if name == "git_commit"
+                else ["branch", "upstream", "unpushed_commits"]
+            )
+            return {"git": {"repo": status["repo"], **{k: status[k] for k in keys}}}
+        return None
+
     tool_specs = openai_tool_specs()
 
     async def load_context(state: AgentState) -> dict[str, Any]:
@@ -173,6 +220,9 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             previous_sources=state.get("previous_sources"),
             notes_unavailable=state.get("notes_unavailable", False),
             skills=deps.skills.list(),
+            now=state.get("now"),
+            project=state.get("project"),
+            projects_name=deps.settings.projects_name,
         )
         reply = await deps.chat.complete(
             [{"role": "system", "content": system}, *state["messages"]],
@@ -184,14 +234,19 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             "content": normalize_citations(reply.content or ""),
         }
         if allow_tools and reply.tool_calls:
-            message["tool_calls"] = [
-                {
+            message["tool_calls"] = []
+            for tc in reply.tool_calls:
+                call: dict[str, Any] = {
                     "id": tc.id,
                     "type": "function",
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                 }
-                for tc in reply.tool_calls
-            ]
+                # Gemini returns a "thought signature" here and rejects the next turn
+                # if it is not sent back. Nebius never sets it.
+                extra = (getattr(tc, "model_extra", None) or {}).get("extra_content")
+                if extra:
+                    call["extra_content"] = extra
+                message["tool_calls"].append(call)
         return {"messages": [message], "iterations": state["iterations"] + 1}
 
     def route_after_agent(state: AgentState) -> str:
@@ -205,6 +260,8 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
         #    program now: it is what the user will see and what will run.
         parsed = []
         programs: dict[str, str] = {}
+        notes: dict[str, dict[str, Any]] = {}  # write_note: the note as it is now
+        previews: dict[str, dict[str, Any]] = {}  # git / folder actions: what they touch
         for call in calls:
             name = call["function"]["name"]
             tool = TOOLS.get(name)
@@ -217,15 +274,23 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                 if name == "run_skill":
                     skill = deps.skills.get(args.name)
                     programs[call["id"]] = build_program(skill, args.params)
+                if name == "write_note" and deps.vault is not None:
+                    # Shown in the approval and part of its fingerprint: if the note
+                    # changes before the user decides, the approval is stale.
+                    notes[call["id"]] = deps.vault.snapshot(args.path)
+                if name in ("git_commit", "git_push", "create_folder"):
+                    shown = await preview(name, args)
+                    if shown:
+                        previews[call["id"]] = shown
                 parsed.append((call, tool, args, None))
-            except (ValueError, ValidationError) as exc:  # SkillError is a ValueError
+            except (ValueError, ValidationError) as exc:  # SkillError/VaultError are ValueErrors
                 parsed.append((call, tool, None, f"Invalid tool call: {exc}"))
 
         # 2. Ask for ALL approvals first. Nothing has run yet, so when LangGraph re-runs
         #    this node on resume, no action can be executed twice.
         decisions: dict[str, str] = {}
         for call, tool, args, error in parsed:
-            if error is None and tool.side_effect:
+            if error is None and requires_approval(tool, args):
                 payload: dict[str, Any] = {
                     "tool_call_id": call["id"],
                     "tool": tool.name,
@@ -236,7 +301,36 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
                 if tool.name == "run_skill":
                     payload["program"] = programs[call["id"]]
                     payload["description"] = deps.skills.get(args.name).description
+                if call["id"] in notes:
+                    payload["note"] = notes[call["id"]]
+                payload.update(previews.get(call["id"], {}))
                 decisions[call["id"]] = classify_decision(interrupt(payload), payload)
+
+        # 2b. Actions on the user's computer (music, apps, reminders...) are run by the
+        #     desktop app: the graph pauses with a "client_action" and resumes with its
+        #     result. Low-risk ones need no approval; the others (screen capture, clipboard
+        #     write, saving a routine) are sent to the app only if approved in step 2. An
+        #     approval can never be answered through this path (the API checks the kind).
+        client_results: dict[str, dict[str, Any]] = {}
+        for call, tool, args, error in parsed:
+            if error is None and tool.client_side:
+                if requires_approval(tool, args) and decisions.get(call["id"]) != APPROVE:
+                    continue  # rejected or stale: never reaches the computer
+                answer = interrupt(
+                    {
+                        "kind": CLIENT_ACTION,
+                        "tool_call_id": call["id"],
+                        "tool": tool.name,
+                        "args": args.model_dump(),
+                    }
+                )
+                valid = isinstance(answer, dict) and answer.get("tool_call_id") == call["id"]
+                result_value = answer.get("client_result") if valid else None
+                client_results[call["id"]] = (
+                    result_value
+                    if isinstance(result_value, dict)
+                    else {"status": "error", "error": "The desktop app did not run this action."}
+                )
 
         # 3. Execute: read-only tools directly, side-effect tools only if approved.
         messages, actions = [], list(state["actions"])
@@ -247,21 +341,24 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             decision = None
             if error is not None:
                 result: dict[str, Any] = {"status": "error", "error": error}
-            elif tool.side_effect and decisions.get(call["id"]) == "stale":
+            elif requires_approval(tool, args) and decisions.get(call["id"]) == "stale":
                 decision = "stale"
                 result = {
                     "status": "not_run",
                     "message": "The action changed after the user saw it, so it was not run. "
                     "Tell the user and request it again.",
                 }
-            elif tool.side_effect and decisions.get(call["id"]) != APPROVE:
+            elif requires_approval(tool, args) and decisions.get(call["id"]) != APPROVE:
                 decision = "reject"
                 result = {
                     "status": "rejected",
                     "message": "The user rejected this action. Do not retry it.",
                 }
+            elif tool.client_side:
+                decision = APPROVE if requires_approval(tool, args) else None
+                result = client_results[call["id"]]
             else:
-                decision = APPROVE if tool.side_effect else None
+                decision = APPROVE if requires_approval(tool, args) else None
                 try:
                     output = await executor.execute(
                         name,

@@ -37,13 +37,14 @@ DEFAULT_WAIT: wait_base = wait_exponential_jitter(initial=1, max=10)
 
 
 def build_client(settings: Settings, *, http_client: Any = None) -> AsyncOpenAI:
-    """Create the single AsyncOpenAI client pointed at Nebius Token Factory.
+    """Create the single AsyncOpenAI client pointed at the selected provider
+    (Nebius Token Factory by default; Gemini when LLM_PROVIDER=gemini, for testing).
 
     `http_client` is only for tests (inject an httpx client that respx can mock).
     """
     return AsyncOpenAI(
-        base_url=settings.nebius_base_url,
-        api_key=settings.nebius_api_key.get_secret_value(),
+        base_url=settings.inference_base_url,
+        api_key=settings.inference_api_key,
         max_retries=0,
         http_client=http_client,
     )

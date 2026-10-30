@@ -19,6 +19,8 @@ from assistant.memory.facts import FactMemory
 from assistant.memory.retrieval import Retriever
 from assistant.sandbox.base import SandboxResult
 from assistant.skills.store import Skill, SkillStore
+from assistant.vault.notes import Vault
+from assistant.workspace.projects import Workspace
 
 
 def tool_call(name: str, args: dict, call_id: str = "c1") -> SimpleNamespace:
@@ -61,7 +63,7 @@ CODE = {"code": "print(sum(range(10)))", "explanation": "Suma del 0 al 9"}
 
 @pytest.fixture
 def make_agent(store, fake_embedder, settings, tmp_path):
-    def make(*replies, checkpointer=None):
+    def make(*replies, checkpointer=None, vault=None, workspace=None):
         chat = ScriptedChat(*replies)
         sandbox = FakeSandbox()
         deps = AgentDeps(
@@ -72,6 +74,8 @@ def make_agent(store, fake_embedder, settings, tmp_path):
             audit=AuditLog(tmp_path / "audit.log"),
             settings=settings,
             skills=SkillStore(tmp_path / "skills.json"),
+            vault=vault,
+            workspace=workspace,
         )
         graph = build_graph(deps, checkpointer or InMemorySaver())
         make.skills = deps.skills
@@ -387,6 +391,163 @@ async def test_skill_edited_after_approval_request_never_runs_unseen_code(make_a
     assert sandbox.runs == []  # payload changed → the approval no longer applies
     assert done["actions"][0]["decision"] == "stale"
     assert done["actions"][0]["result"]["status"] == "not_run"
+
+
+@pytest.fixture
+def notes(tmp_path):
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "Ideas.md").write_text("Primera idea\n", encoding="utf-8")
+    return Vault(root, tmp_path / "backups")
+
+
+async def test_reading_notes_needs_no_approval(make_agent, notes):
+    graph, _, _ = make_agent(
+        reply(calls=[tool_call("read_note", {"path": "Ideas.md"})]),
+        reply("Tu nota dice…"),
+        vault=notes,
+    )
+
+    result = await graph.ainvoke(user("lee mi nota de ideas"), config())
+
+    assert "__interrupt__" not in result
+    assert result["actions"][0]["result"]["content"] == "Primera idea\n"
+
+
+async def test_write_note_waits_for_approval_and_shows_the_note(make_agent, notes):
+    args = {"path": "Ideas.md", "content": "- Segunda idea", "mode": "append"}
+    graph, _, _ = make_agent(
+        reply(calls=[tool_call("write_note", args)]), reply("Hecho."), vault=notes
+    )
+
+    paused = await graph.ainvoke(user("añade una idea"), config())
+    pending = paused["__interrupt__"][0].value
+
+    assert pending["tool"] == "write_note"
+    assert pending["note"]["current"] == "Primera idea\n"
+    assert pending["note"]["exists"] and "sha256" in pending["note"]
+    assert notes.read("Ideas.md")["content"] == "Primera idea\n"  # nothing written yet
+
+    await graph.ainvoke(approve(paused), config())
+    assert notes.read("Ideas.md")["content"] == "Primera idea\n- Segunda idea\n"
+
+
+async def test_note_changed_before_approval_is_not_written(make_agent, notes):
+    args = {"path": "Ideas.md", "content": "Todo nuevo", "mode": "overwrite"}
+    graph, _, _ = make_agent(reply(calls=[tool_call("write_note", args)]), reply("ok"), vault=notes)
+    paused = await graph.ainvoke(user("reescribe mi nota"), config())
+
+    (notes.root / "Ideas.md").write_text("Editada a mano en Obsidian\n", encoding="utf-8")
+    done = await graph.ainvoke(approve(paused), config())
+
+    assert done["actions"][0]["decision"] == "stale"
+    assert notes.read("Ideas.md")["content"] == "Editada a mano en Obsidian\n"
+
+
+async def test_note_tools_without_vault_report_it(make_agent):
+    graph, _, _ = make_agent(reply(calls=[tool_call("list_notes", {})]), reply("No tengo acceso."))
+
+    result = await graph.ainvoke(user("mis notas"), config())
+
+    assert "OBSIDIAN_VAULT" in result["actions"][0]["result"]["error"]
+
+
+@pytest.fixture
+def repo_ws(tmp_path):
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git not installed")
+    repo = tmp_path / "Documentos" / "Algoria"
+    repo.mkdir(parents=True)
+
+    def git(*args):
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "T")
+    (repo / "a.py").write_text("a = 1\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-m", "first")
+    (repo / "b.py").write_text("b = 2\n", encoding="utf-8")
+    return Workspace(tmp_path / "Documentos", autocrlf="true")
+
+
+async def test_git_commit_waits_for_approval_and_shows_the_files(make_agent, repo_ws):
+    args = {"repo": "Algoria", "message": "feat: add b"}
+    graph, _, _ = make_agent(
+        reply(calls=[tool_call("git_commit", args)]), reply("Hecho."), workspace=repo_ws
+    )
+
+    paused = await graph.ainvoke(user("haz commit"), config())
+    pending = paused["__interrupt__"][0].value
+
+    assert pending["git"]["uncommitted_changes"] == ["?? b.py"]
+    assert (await repo_ws.status("Algoria", fetch=False))["uncommitted_changes"]  # not yet
+
+    done = await graph.ainvoke(approve(paused), config())
+    assert done["actions"][0]["result"]["status"] == "committed"
+    assert (await repo_ws.status("Algoria", fetch=False))["uncommitted_changes"] == []
+
+
+async def test_git_commit_is_stale_if_files_change_before_approval(make_agent, repo_ws):
+    args = {"repo": "Algoria", "message": "feat: add b"}
+    graph, _, _ = make_agent(
+        reply(calls=[tool_call("git_commit", args)]), reply("ok"), workspace=repo_ws
+    )
+    paused = await graph.ainvoke(user("haz commit"), config())
+
+    (repo_ws.root / "Algoria" / "secreto.txt").write_text("no lo vi", encoding="utf-8")
+    done = await graph.ainvoke(approve(paused), config())
+
+    assert done["actions"][0]["decision"] == "stale"
+    assert "?? secreto.txt" in (await repo_ws.status("Algoria", fetch=False))["uncommitted_changes"]
+
+
+async def test_git_status_needs_no_approval(make_agent, repo_ws):
+    graph, _, _ = make_agent(
+        reply(calls=[tool_call("git_status", {"repo": "Algoria"})]),
+        reply("Tienes cambios."),
+        workspace=repo_ws,
+    )
+
+    result = await graph.ainvoke(user("¿hay commits pendientes?"), config())
+
+    assert "__interrupt__" not in result
+    assert result["actions"][0]["result"]["uncommitted_changes"] == ["?? b.py"]
+
+
+async def test_computer_action_is_handed_to_the_app_and_its_result_used(make_agent):
+    graph, chat, _ = make_agent(
+        reply(calls=[tool_call("media_control", {"action": "next"})]),
+        reply("Listo, siguiente canción."),
+    )
+
+    paused = await graph.ainvoke(user("siguiente canción"), config())
+    pending = paused["__interrupt__"][0].value
+    assert pending["kind"] == "client_action" and pending["tool"] == "media_control"
+
+    result = {"status": "ok", "now_playing": "Queen - Bohemian Rhapsody"}
+    done = await graph.ainvoke(
+        Command(resume={"tool_call_id": pending["tool_call_id"], "client_result": result}), config()
+    )
+
+    assert done["actions"][0]["result"] == result
+    assert done["actions"][0]["decision"] is None  # no approval involved
+    assert done["messages"][-1]["content"] == "Listo, siguiente canción."
+
+
+async def test_computer_action_with_a_wrong_answer_is_reported_as_not_run(make_agent):
+    graph, _, _ = make_agent(reply(calls=[tool_call("now_playing", {})]), reply("No pude."))
+    await graph.ainvoke(user("¿qué suena?"), config())
+
+    done = await graph.ainvoke(
+        Command(resume={"tool_call_id": "other", "client_result": {"status": "ok"}}), config()
+    )
+
+    assert done["actions"][0]["result"]["status"] == "error"
 
 
 async def test_unknown_skill_or_bad_params_never_ask_or_run(make_agent):

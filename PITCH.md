@@ -178,6 +178,9 @@ Con `uv sync`. El archivo `uv.lock` fija las versiones exactas de todas las depe
 | **Huella (fingerprint) SHA-256** | Un "resumen" único de un contenido: si cambia un solo carácter, la huella cambia por completo. La usamos para que tu aprobación valga solo para lo que viste. | `graph.py` → `payload_fingerprint()` |
 | **TOCTOU** | *Time of check, time of use*: un fallo de seguridad en el que algo cambia entre que se comprueba y que se usa. | `graph.py` → `classify_decision()` |
 | **Token** | El trozo de texto con el que trabaja el modelo (aprox. ¾ de una palabra). Los límites y costes se miden en tokens. | `.env` → `MAX_COMPLETION_TOKENS` |
+| **Transcripción (voz → texto)** | Convertir lo que dices en texto para dárselo al agente. La app graba un WAV y un modelo multimodal (que entiende audio) lo transcribe. | `src/assistant/api/routes/voice.py` |
+| **Palabra de activación (wake word)** | Una palabra que "despierta" al asistente, como «Alexa» u «Oye Siri». La nuestra es «Isabel» y se detecta en tu PC, sin internet, con un reconocedor que solo conoce esa palabra. | `desktop/src/voice/wakeword.ts` |
+| **Shader** | Pequeño programa que corre en la tarjeta gráfica y calcula la posición y el color de miles de partículas a la vez; así la burbuja se anima sin cargar el procesador. | `desktop/src/orb/shaders.ts` |
 
 ## Cómo comprobarlo tú mismo (estado actual)
 ```

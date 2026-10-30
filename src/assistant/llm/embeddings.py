@@ -58,7 +58,12 @@ class Embedder:
                 len(batch),
                 (time.perf_counter() - start) * 1000,
             )
-            for item in sorted(response.data, key=lambda d: d.index):
+            # Gemini omits `index`; its vectors already come in input order.
+            ordered = sorted(
+                enumerate(response.data),
+                key=lambda pair: pair[1].index if pair[1].index is not None else pair[0],
+            )
+            for _, item in ordered:
                 if len(item.embedding) != self._settings.embed_dim:
                     raise EmbeddingDimensionError(
                         f"Got dimension {len(item.embedding)}, "

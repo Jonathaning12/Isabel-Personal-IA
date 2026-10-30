@@ -16,26 +16,31 @@ from assistant.config import get_settings
 
 def main() -> int:
     settings = get_settings()
+    gemini = settings.llm_provider == "gemini"
     client = OpenAI(
-        base_url=settings.nebius_base_url,
-        api_key=settings.nebius_api_key.get_secret_value(),
+        base_url=settings.inference_base_url,
+        api_key=settings.inference_api_key,
         timeout=30,
     )
 
     try:
-        model_ids = sorted(m.id for m in client.models.list())
+        # Gemini lists its models as "models/<id>".
+        model_ids = sorted(m.id.removeprefix("models/") for m in client.models.list())
     except AuthenticationError:
-        print("✘ La API key fue rechazada. Revisa NEBIUS_API_KEY en tu archivo .env.")
+        print(f"✘ La API key fue rechazada. Revisa {settings.api_key_name} en tu archivo .env.")
         return 1
     except APIConnectionError:
-        print(f"✘ No se pudo conectar a {settings.nebius_base_url}. Revisa NEBIUS_BASE_URL.")
+        print(f"✘ No se pudo conectar a {settings.inference_base_url}.")
         return 1
 
-    nvidia = [m for m in model_ids if "nvidia" in m.lower() or "nemotron" in m.lower()]
-    print(f"✔ Conectado a Nebius. Modelos disponibles: {len(model_ids)}")
-    print("\nModelos NVIDIA / Nemotron en el catálogo:")
-    for m in nvidia:
-        print(f"  - {m}")
+    print(f"✔ Conectado a {settings.llm_provider}. Modelos disponibles: {len(model_ids)}")
+    if gemini:
+        print("⚠ Gemini es solo para pruebas: la entrega del hackathon debe usar Nebius.")
+    keywords = ("gemini", "embedding") if gemini else ("nvidia", "nemotron")
+    print("\nModelos relevantes en el catálogo:")
+    for m in model_ids:
+        if any(k in m.lower() for k in keywords):
+            print(f"  - {m}")
 
     ok = True
     for label, model in (("LLM_MODEL", settings.llm_model), ("EMBED_MODEL", settings.embed_model)):
@@ -53,7 +58,11 @@ def main() -> int:
         model=settings.llm_model,
         messages=[{"role": "user", "content": "Responde solo con: hola"}],
         max_tokens=50,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        **(
+            {"reasoning_effort": "minimal"}
+            if gemini
+            else {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+        ),
     )
     answer = (chat.choices[0].message.content or "").strip()
     if not answer:
@@ -70,7 +79,7 @@ def main() -> int:
         print(f"✘ Dimensión real = {dim}, pero EMBED_DIM = {settings.embed_dim}. Corrige .env.")
         return 1
 
-    print("\n🎉 Todo listo: Nebius y los modelos NVIDIA funcionan.")
+    print(f"\n🎉 Todo listo: {settings.llm_provider} y los modelos configurados funcionan.")
     return 0
 
 

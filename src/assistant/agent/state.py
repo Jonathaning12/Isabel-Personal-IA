@@ -16,3 +16,5 @@ class AgentState(TypedDict, total=False):
     iterations: int  # agent ⇄ tools round trips in the current turn (loop guard)
     notes_unavailable: bool  # note search failed this turn (e.g. Nebius embedding timeout)
     previous_sources: list[str]  # sources cited in the previous answer ("where did you get that?")
+    now: str  # the user's local date and time for this turn, sent by the client
+    project: str | None  # the project folder selected in the app ("esta carpeta")

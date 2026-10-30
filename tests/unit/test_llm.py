@@ -6,6 +6,7 @@ import httpx
 import pytest
 import respx
 from openai import APITimeoutError, BadRequestError
+from pydantic import SecretStr
 from tenacity import wait_none
 
 from assistant.llm.chat import ChatClient
@@ -76,6 +77,27 @@ async def test_complete_strips_content_and_sends_thinking_flag(chat):
 
 
 @respx.mock
+async def test_gemini_provider_uses_its_own_key_and_thinking_switch(settings):
+    gemini = settings.model_copy(
+        update={
+            "llm_provider": "gemini",
+            "gemini_api_key": SecretStr("gemini-key"),
+            "gemini_base_url": FAKE_BASE_URL,
+        }
+    )
+    route = respx.post(CHAT_URL).mock(return_value=chat_response("hola"))
+    client = ChatClient(build_test_client(gemini), gemini, wait=wait_none())
+
+    await client.complete([{"role": "user", "content": "hi"}], thinking=False)
+
+    request = route.calls.last.request
+    body = json.loads(request.content)
+    assert request.headers["authorization"] == "Bearer gemini-key"
+    assert "chat_template_kwargs" not in body  # Nemotron-only parameter
+    assert body["reasoning_effort"] == "minimal"
+
+
+@respx.mock
 async def test_rate_limit_is_retried(chat):
     route = respx.post(CHAT_URL).mock(
         side_effect=[httpx.Response(429, json={"error": "slow down"}), chat_response("ok")]
@@ -116,6 +138,20 @@ async def test_embeddings_are_batched_in_order(embedder):
     assert route.call_count == 3
     assert len(vectors) == 5
     assert all(len(v) == 3 for v in vectors)
+
+
+@respx.mock
+async def test_embeddings_without_index_keep_input_order(embedder):
+    def no_index(request: httpx.Request) -> httpx.Response:
+        texts = json.loads(request.content)["input"]
+        data = [{"object": "embedding", "embedding": [float(len(t))] * 3} for t in texts]
+        return httpx.Response(200, json={"object": "list", "model": "test/embed", "data": data})
+
+    respx.post(EMBED_URL).mock(side_effect=no_index)
+
+    vectors = await embedder.embed(["a", "bb", "ccc"])
+
+    assert [v[0] for v in vectors] == [1.0, 2.0, 3.0]
 
 
 @respx.mock

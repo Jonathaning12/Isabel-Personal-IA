@@ -26,18 +26,20 @@ def _env() -> tuple[Check, Settings | None]:
         settings = Settings()  # type: ignore[call-arg]
     except Exception as exc:
         return (False, f"Configuración inválida: {exc}", "Revisa .env frente a .env.example"), None
-    if not settings.nebius_api_key.get_secret_value():
-        return (False, "NEBIUS_API_KEY vacía", "Añade tu key de Nebius en .env"), None
-    return (True, "Encontrado, con NEBIUS_API_KEY", ""), settings
+    key = settings.api_key_name
+    if not settings.inference_api_key:
+        return (False, f"{key} vacía", f"Añade tu key en {key} dentro de .env"), None
+    return (True, f"Encontrado, con {key} (proveedor: {settings.llm_provider})", ""), settings
 
 
 def _nebius(settings: Settings) -> Check:
     client = OpenAI(
-        base_url=settings.nebius_base_url,
-        api_key=settings.nebius_api_key.get_secret_value(),
+        base_url=settings.inference_base_url,
+        api_key=settings.inference_api_key,
         timeout=20,
     )
-    ids = {m.id for m in client.models.list()}
+    # Gemini lists its models as "models/<id>".
+    ids = {m.id.removeprefix("models/") for m in client.models.list()}
     missing = [m for m in (settings.llm_model, settings.embed_model) if m not in ids]
     if missing:
         return (
@@ -50,8 +52,8 @@ def _nebius(settings: Settings) -> Check:
 
 def _embedding(settings: Settings) -> Check:
     client = OpenAI(
-        base_url=settings.nebius_base_url,
-        api_key=settings.nebius_api_key.get_secret_value(),
+        base_url=settings.inference_base_url,
+        api_key=settings.inference_api_key,
         timeout=60,
     )
     dim = len(
@@ -106,8 +108,12 @@ def run_doctor(console: Console) -> bool:
     results: list[tuple[str, Check]] = [("Archivo .env", env_check)]
     if settings is not None:
         checks: list[tuple[str, Callable[[Settings], Check], str]] = [
-            ("Nebius y modelos", _nebius, "Revisa tu conexión y la key"),
-            ("Embeddings", _embedding, "Nebius tarda o falla; reintenta en un momento"),
+            (
+                f"{settings.llm_provider.capitalize()} y modelos",
+                _nebius,
+                "Revisa tu conexión y la key",
+            ),
+            ("Embeddings", _embedding, "El proveedor tarda o falla; reintenta en un momento"),
             ("Qdrant", _qdrant, "docker compose up -d qdrant"),
             ("Docker y sandbox", _sandbox, "Abre Docker Desktop"),
             ("API", _api, "docker compose up -d"),

@@ -39,8 +39,12 @@ class ChatClient:
             "messages": messages,
             "max_tokens": max_tokens or self._settings.max_completion_tokens,
             "timeout": self._settings.llm_timeout_s,
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": thinking}},
         }
+        if self._settings.llm_provider == "nebius":
+            params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": thinking}}
+        elif not thinking:
+            # Lowest thinking level Gemini accepts on every model ("none" is rejected by 3.x).
+            params["reasoning_effort"] = "minimal"
         if tools:
             params["tools"] = tools
         return params

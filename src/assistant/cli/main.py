@@ -7,6 +7,7 @@ skills (list / show / delete), doctor.
 import os
 import re
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -64,11 +65,14 @@ def _collect_files(paths: list[Path]) -> list[Path]:
 
 
 def _source_name(path: Path) -> str:
-    """Relative path when possible, so the same file always maps to the same document."""
+    """Relative path when possible, so the same file always maps to the same document.
+
+    Always with "/" separators: the API runs on Linux, where "\\" is not a separator.
+    """
     try:
-        return str(path.resolve().relative_to(Path.cwd()))
+        return path.resolve().relative_to(Path.cwd()).as_posix()
     except ValueError:
-        return str(path.resolve())
+        return path.resolve().as_posix()
 
 
 @app.command()
@@ -279,10 +283,25 @@ def _cited(answer: str, citations: list[dict]) -> list[dict]:
 
 def _chat_turn(thread_id: str, message: str) -> None:
     with console.status(msg.CHAT_THINKING):
-        result = _request(
-            "POST", "/chat", json={"message": message, "thread_id": thread_id}, timeout=300
-        )
-    while result["status"] == "confirm_required":
+        # Send the local clock: the API runs in UTC and must answer the time like we see it.
+        payload = {
+            "message": message,
+            "thread_id": thread_id,
+            "local_time": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        result = _request("POST", "/chat", json=payload, timeout=300)
+    while result["status"] in ("confirm_required", "client_action"):
+        with console.status(msg.CHAT_THINKING):
+            if result["status"] == "client_action":
+                # Computer actions (music, Spotify) are only available in the desktop app.
+                answer = {
+                    "tool_call_id": result["pending"]["tool_call_id"],
+                    "result": {"status": "error", "error": "Only the desktop app can do this."},
+                }
+                result = _request(
+                    "POST", f"/chat/{thread_id}/client-result", json=answer, timeout=300
+                )
+                continue
         decision = _confirm(result["pending"])
         with console.status(msg.CHAT_THINKING):
             result = _request(

@@ -110,6 +110,42 @@ Things to try in `assistant chat`:
 
 The CLI speaks Spanish (the target user's language); code and docs are in English.
 
+## Desktop app
+
+`desktop/` is an Electron + React + Three.js interface for the same local API: a particle "thought orb" that reacts to what the assistant is doing, voice and text input, spoken replies, and a sidebar with activity, conversation, notes, memory and skills. Approvals work exactly as in the CLI: the dialog shows the full code or fact, and nothing runs until you press **Aprobar**.
+
+```bash
+docker compose up -d          # the API must be running
+cd desktop
+npm install
+npm run fetch-model           # once: local model for the wake word "Isabel"
+npm start                     # builds the UI and opens the app
+```
+
+- **Orb states**: idle (breathing), gathering (particles stream in), thinking (twist and faster spin), speaking (rings driven by the voice), listening (trembles with the mic level), approval pending (amber pulse), error (red flicker). Hover pushes particles away from the pointer; a click makes them burst. Particles assemble when the app opens.
+- **Customizable** (sliders icon, top right): shape (sphere, ring, cube, galaxy, helix, cloud), size, particle count and size, glow, six colors (base and per state), speed, rotation, turbulence, the intensity of every reaction, background dust, presets, and a live preview of each state. Preferences are saved in the user profile (`%APPDATA%/assistant-desktop/settings.json`).
+- **Transparent window**: by default the window is clear glass (fully transparent, frameless, with its own minimize/maximize/close buttons); Settings → Fondo switches to Windows 11 acrylic (blurred desktop, native buttons) after a restart, and sets the darkness of the tint (0–100%). Text panels keep some opacity to stay readable. In a plain browser the background stays solid.
+- **Wake word "Isabel"**: say "Isabel" (e.g. *"Isabel, ¿qué hora es?"*) and she starts listening, like Alexa or Siri. Detection is 100% local with [Vosk](https://alphacephei.com/vosk/) (WebAssembly, small Spanish model, Apache-2.0); no audio leaves the machine until the wake word is heard, and then only the command is sent for transcription. One-time setup: `npm run fetch-model` in `desktop/` (downloads ~40 MB to `desktop/models/`, gitignored). Toggle it in Settings → Voz. Trade-off: the Vosk engine needs `'unsafe-eval'` in the page's CSP.
+- **Obsidian notes**: set `OBSIDIAN_VAULT` (and `OBSIDIAN_VAULT_NAME`) in `.env` and the vault is mounted into the API. Isabel can list, read, search notes and list unchecked `- [ ]` tasks without approval; `write_note` (create / append / overwrite) always shows the exact content plus the current note and waits for **Aprobar**. Overwrites keep a backup in `data/note-backups/`, and if the note changes before you approve, nothing is written. The sidebar syncs the vault into semantic search, and cited vault notes open in Obsidian with a click. All paths are confined to the vault (`.md` only, no hidden folders, no `..`).
+- **Projects and git**: set `PROJECTS_HOST` (e.g. `C:/Users/you/Documents`) and `GIT_CONFIG_HOST` (your `.gitconfig`, for the commit author) in `.env`. Isabel can list folders and repos, run `git status` / `git diff` freely, and — always after approval — create folders, commit (`git add -A` + message she writes from the diff) and push. The approval shows the branch, the files or the commits to push; if the repo changes before you approve, nothing runs. Pushing to GitHub needs `GITHUB_TOKEN` in `.env` (fine-grained, *Contents: read and write*); the token is passed to git through a credential helper, never stored. Pick the **current project** in the sidebar (Proyectos) so "esta carpeta" works in voice commands.
+- **Music / Spotify** (actions on your computer): the agent asks the desktop app to act and waits for the result (`client_action` pause, answered via `POST /chat/{id}/client-result`, which can never answer an approval). Without setup: pause/resume, next/previous, volume (Windows media keys) and "what's playing" (Spotify window title). To play a specific song/artist/album/playlist, connect Spotify Premium in Settings → Spotify: create a free app at developer.spotify.com with Redirect URI `http://127.0.0.1:8888/callback`, paste its Client ID, and log in (OAuth PKCE, no client secret; the refresh token is stored encrypted with the OS). The CLI cannot run these actions. Playback always targets this PC's Spotify app and is only reported as playing once Spotify shows the song (it can take ~6 s). Troubleshooting: `cd desktop && npx electron . --spotify-diagnose` prints the devices and player state Spotify reports (read-only).
+- **Everyday actions** (run by the desktop app on your PC):
+  - *Reminders and timers*: "recuérdame en 20 minutos…", "alarma mañana a las 7" — stored in the app's profile folder, announced with a Windows notification and Isabel's voice, even with the window in the tray.
+  - *Open things*: installed apps (only Start-menu apps), websites (http/https only), folders (Descargas, Escritorio, Documentos… or a project folder), files found with `find_files` (documents, images, media only; never executables), and projects in VS Code.
+  - *Routines*: "guarda una rutina modo trabajo que abra VS Code con Algoria y ponga mi playlist" (saving needs approval; steps are limited to open/music actions), then "modo trabajo".
+  - *Clipboard*: reading it ("resume / traduce lo que copié") and leaving a result copied both need approval (the clipboard may hold passwords). Websites with a path or search terms also need approval, so data can never be smuggled out in a URL; bare homepages open directly. Risky computer actions are verified twice: by the agent's approval and again by the app's main process against the API (`GET /chat/{id}/pending-action`). `open_app` never opens system tools (terminal, PowerShell, registry editor, admin tools).
+  - *Screen*: "¿qué error sale en mi pantalla?" takes a screenshot only after approval (Isabel hides herself for the capture) and asks Gemini about it (`POST /vision`); nothing is stored.
+  - *Tray*: closing the window keeps Isabel in the system tray (toggle in Settings → Aplicación); tray icon → Salir to quit. Only one instance runs at a time.
+- **Information**: weather (Open-Meteo, free, no key), file search by name in the projects folder, a local overview of all git repos, and web search (Gemini + Google Search if your key has that quota → Brave Search if `BRAVE_API_KEY` is set → Wikipedia as a last resort). "Buenos días" gives a briefing: reminders, Obsidian tasks, repos and weather.
+- **Voice approvals**: while an approval waits, Isabel reads it aloud and then listens locally: say **"apruebo"** (or "confirmo") to approve, **"no"** / "cancela" to reject. Approving requires one of those long words recognized with ≥ 90 % confidence ("sí" alone never approves: a short word was once misheard during testing); the buttons always work too.
+- **Natural voice**: answers are read with a soft Gemini voice (`POST /speak`, default "Achernar"; others in Settings → Voz, with a preview button); the orb follows the real loudness of the audio. If the voice service fails or takes more than 8 s, the Windows voice is used instead.
+- **Local time**: every message carries the user's clock and time zone, so "what time is it?", dates and simple arithmetic are answered directly, with no sandbox and no approval (the sandbox clock is UTC).
+- **Voice glow**: while recording, a faint light in the "listening" color lines the window edges and rises from the controls, breathing with the microphone level.
+- **Voice input** records a WAV and sends it to `POST /transcribe`, which needs `LLM_PROVIDER=gemini` (Nemotron does not accept audio). The audio leaves the machine for transcription. **Spoken replies** use the operating system's voices (local).
+- **Security**: the UI has no Node access; the main process forwards only an allow-list of API routes (`desktop/electron/main.cjs`), and the packaged page has a strict Content Security Policy.
+- `npm run preview` serves the UI in a browser at http://localhost:5173 (API proxied) for quick visual checks; adding notes from disk only works in the app.
+- The "gathering" → "thinking" split is an approximation in time: the API does not stream progress yet.
+
 ## Tests and evaluation
 
 ```bash
@@ -138,6 +174,7 @@ src/assistant/
   llm/         Nebius client (retries), chat, embeddings
   api/         FastAPI app and routes (/chat, /confirm, /ask, /ingest, /memory, /health)
   cli/         Typer + Rich terminal app, doctor
+desktop/       Electron + React + Three.js app (particle orb, voice, sidebar)
 scripts/       verify_models, eval_retrieval, bench, demo_setup
 tests/         unit, integration, live, fixtures
 ```
