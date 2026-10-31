@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     tts_fallback_model: str = "gemini-2.5-flash-preview-tts"  # tried when the main one is slow
     tts_attempt_timeout_s: float = 7.0  # per model; the app waits up to ~16 s in total
     tts_voice: str = "Achernar"
+    # Local voice service (Piper, see services/voice). Empty = not used.
+    local_voice_url: str = ""
+    local_voice_timeout_s: float = 20.0
     # Web search (Gemini with Google Search grounding); falls back to LLM_MODEL
     search_model: str = "gemini-flash-latest"
     brave_api_key: SecretStr = SecretStr("")  # optional: Brave Search API (free tier)
@@ -79,6 +82,8 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(default=5, gt=0)
     retrieval_min_score: float = 0.42  # calibrated with scripts/eval_retrieval.py
     fact_dedup_threshold: float = 0.9
+    # Learn facts the user mentions in passing (one extra cheap LLM call per message).
+    auto_learn: bool = True
 
     # Agent
     max_agent_iterations: int = Field(default=6, gt=0)

@@ -8,20 +8,29 @@ POST /speak takes {"text", "voice"?} and returns a WAV with a natural Gemini voi
 (text-to-speech through Gemini's native API). The text is an answer the model already
 wrote, so nothing new leaves the machine.
 
-Only Gemini offers audio today; with Nebius both endpoints answer 501 and the desktop app
-falls back to the operating system's voices.
+/speak tries the chosen Gemini voice first, then the local Piper voice (services/voice,
+LOCAL_VOICE_URL). /transcribe needs Gemini. Without an engine the endpoints answer 501
+and the desktop app uses Windows' voices.
+
+Free Gemini keys have a small daily TTS quota, so /speak saves every clip in
+`data/tts_cache/` (repeated phrases cost nothing) and, after a 429, stops calling that
+model until its retry time instead of making the app wait for an answer that won't come.
 """
 
 import base64
+import hashlib
 import io
 import logging
 import re
 import time
 import wave
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
+
+from assistant.config import Settings
 
 router = APIRouter()
 logger = logging.getLogger("assistant.voice")
@@ -30,6 +39,8 @@ MAX_SPEAK_CHARS = 1500
 # Prebuilt Gemini voices the app offers (Google's own one-word descriptions in comments).
 VOICES = {"Achernar", "Sulafat", "Vindemiatrix", "Despina", "Aoede", "Kore", "Leda", "Charon"}
 SPEAK_STYLE = "Say in Spanish, in a warm, soft and natural tone: "
+QUOTA_PAUSE_S = 60.0  # used when a 429 does not say when to retry
+MAX_CACHED_CLIPS = 300
 
 
 class SpeakRequest(BaseModel):
@@ -48,30 +59,85 @@ def pcm_to_wav(pcm: bytes, rate: int) -> bytes:
     return buffer.getvalue()
 
 
+def retry_after_s(reply: httpx.Response) -> float:
+    """Seconds Gemini asks us to wait after a 429 (its RetryInfo detail), or a default."""
+    found = re.search(r'"retryDelay":\s*"(\d+(?:\.\d+)?)s"', reply.text)
+    return float(found.group(1)) if found else QUOTA_PAUSE_S
+
+
+def cache_file(cache_dir: Path, voice: str, text: str) -> Path:
+    key = hashlib.sha256(f"{voice}|{SPEAK_STYLE}{text}".encode()).hexdigest()
+    return cache_dir / f"{key}.wav"
+
+
+def save_clip(path: Path, audio: bytes) -> None:
+    """Store a clip and keep only the most recently used ones."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(audio)
+    clips = sorted(path.parent.glob("*.wav"), key=lambda p: p.stat().st_mtime)
+    for old in clips[:-MAX_CACHED_CLIPS]:
+        old.unlink(missing_ok=True)
+
+
 @router.post("/speak")
 async def speak(request: Request, body: SpeakRequest) -> Response:
+    """Speak with the chosen Gemini voice; if it is unavailable, with the local voice."""
     settings = request.app.state.settings
-    if settings.llm_provider != "gemini":
-        raise HTTPException(501, "Natural voice needs LLM_PROVIDER=gemini")
+    if settings.llm_provider != "gemini" and not settings.local_voice_url:
+        raise HTTPException(501, "Natural voice needs LLM_PROVIDER=gemini or LOCAL_VOICE_URL")
     voice = body.voice if body.voice in VOICES else settings.tts_voice
+    cached = cache_file(Path(settings.data_dir) / "tts_cache", voice, body.text)
+    if cached.exists():
+        cached.touch()  # recently used: keep it
+        logger.info("tts cache_hit voice=%s chars=%d", voice, len(body.text))
+        return wav_response(cached.read_bytes(), "gemini")
+    if settings.llm_provider == "gemini":
+        audio = await gemini_speech(request, voice, body.text)
+        if audio:
+            save_clip(cached, audio)
+            return wav_response(audio, "gemini")
+    audio = await local_speech(settings, body.text)
+    if audio:
+        return wav_response(audio, "local")
+    raise HTTPException(503, "tts_unavailable")
+
+
+def wav_response(audio: bytes, engine: str) -> Response:
+    # X-Voice-Engine tells the app (and the logs) which voice was used.
+    return Response(content=audio, media_type="audio/wav", headers={"X-Voice-Engine": engine})
+
+
+async def gemini_speech(request: Request, voice: str, text: str) -> bytes | None:
+    settings = request.app.state.settings
     payload = {
-        "contents": [{"parts": [{"text": SPEAK_STYLE + body.text}]}],
+        "contents": [{"parts": [{"text": SPEAK_STYLE + text}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice}}},
         },
     }
+    # Model -> time.monotonic() until which its quota is exhausted (set after a 429).
+    if not hasattr(request.app.state, "tts_paused"):
+        request.app.state.tts_paused = {}
+    paused: dict[str, float] = request.app.state.tts_paused
     # The TTS models are often saturated: each one gets a short time limit, and if the main
     # model is slow or busy the backup model is tried right away (same voice).
     models = [m for m in (settings.tts_model, settings.tts_fallback_model) if m]
     start = time.perf_counter()
     async with httpx.AsyncClient(timeout=settings.tts_attempt_timeout_s) as client:
         for model in models:
+            if paused.get(model, 0.0) > time.monotonic():
+                continue
             url = f"{settings.gemini_native_url}/models/{model}:generateContent"
             try:
                 reply = await client.post(
                     url, headers={"x-goog-api-key": settings.inference_api_key}, json=payload
                 )
+                if reply.status_code == 429:
+                    wait = retry_after_s(reply)
+                    paused[model] = time.monotonic() + wait
+                    logger.warning("tts_quota_exhausted model=%s pause_s=%d", model, wait)
+                    continue
                 reply.raise_for_status()
                 part = reply.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
                 audio = base64.b64decode(part["data"], validate=True)
@@ -86,11 +152,29 @@ async def speak(request: Request, body: SpeakRequest) -> Response:
                 "tts model=%s voice=%s chars=%d latency_ms=%d",
                 model,
                 voice,
-                len(body.text),
+                len(text),
                 (time.perf_counter() - start) * 1000,
             )
-            return Response(content=audio, media_type="audio/wav")
-    raise HTTPException(503, "tts_unavailable")
+            return audio
+    return None
+
+
+async def local_speech(settings: Settings, text: str) -> bytes | None:
+    """The local Piper voice (services/voice): no quota, nothing leaves the machine."""
+    if not settings.local_voice_url:
+        return None
+    start = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=settings.local_voice_timeout_s) as client:
+            reply = await client.post(f"{settings.local_voice_url}/tts", json={"text": text})
+            reply.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.warning("tts_failed model=local error=%s", type(exc).__name__)
+        return None
+    logger.info(
+        "tts model=local chars=%d latency_ms=%d", len(text), (time.perf_counter() - start) * 1000
+    )
+    return reply.content
 
 
 MAX_AUDIO_MB = 10

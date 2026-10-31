@@ -143,3 +143,61 @@ def test_transcribe_rejects_empty_audio(monkeypatch, settings, tmp_path):
         response = client.post("/transcribe", files={"audio": ("voz.wav", b"", "audio/wav")})
 
     assert response.status_code == 400
+
+
+@respx.mock
+def test_speak_reuses_a_cached_clip(monkeypatch, settings, tmp_path):
+    route = respx.post(TTS_URL).mock(return_value=wav_reply())
+
+    with make_client(monkeypatch, tts_settings(settings), tmp_path) as client:
+        first = client.post("/speak", json={"text": "Necesito tu aprobación"})
+        second = client.post("/speak", json={"text": "Necesito tu aprobación"})
+
+    assert first.status_code == second.status_code == 200
+    assert second.content == first.content
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_speak_pauses_a_model_whose_quota_is_exhausted(monkeypatch, settings, tmp_path):
+    quota = httpx.Response(
+        429, json={"error": {"details": [{"retryDelay": "40s"}]}, "status": "RESOURCE_EXHAUSTED"}
+    )
+    main = respx.post(TTS_URL).mock(return_value=quota)
+    backup = respx.post(BACKUP_URL).mock(return_value=wav_reply())
+    configured = tts_settings(settings).model_copy(update={"tts_fallback_model": "backup-tts"})
+
+    with make_client(monkeypatch, configured, tmp_path) as client:
+        assert client.post("/speak", json={"text": "Uno"}).status_code == 200
+        assert client.post("/speak", json={"text": "Dos"}).status_code == 200
+
+    assert main.call_count == 1  # not called again during the pause
+    assert backup.call_count == 2
+
+
+LOCAL = "http://voice.test"
+
+
+@respx.mock
+def test_speak_uses_the_local_voice_when_gemini_is_out_of_quota(monkeypatch, settings, tmp_path):
+    respx.post(TTS_URL).mock(return_value=httpx.Response(429, json={"error": "quota"}))
+    local = respx.post(f"{LOCAL}/tts").mock(return_value=httpx.Response(200, content=b"RIFF-local"))
+    configured = tts_settings(settings).model_copy(
+        update={"local_voice_url": LOCAL, "tts_fallback_model": ""}
+    )
+
+    with make_client(monkeypatch, configured, tmp_path) as client:
+        response = client.post("/speak", json={"text": "Hola"})
+
+    assert response.status_code == 200 and response.content == b"RIFF-local"
+    assert response.headers["x-voice-engine"] == "local"
+    assert json.loads(local.calls.last.request.content) == {"text": "Hola"}
+
+
+@respx.mock
+def test_local_voice_works_without_gemini(monkeypatch, settings, tmp_path):
+    respx.post(f"{LOCAL}/tts").mock(return_value=httpx.Response(200, content=b"RIFF-local"))
+    configured = settings.model_copy(update={"local_voice_url": LOCAL})
+
+    with make_client(monkeypatch, configured, tmp_path) as client:
+        assert client.post("/speak", json={"text": "Hola"}).content == b"RIFF-local"

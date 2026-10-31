@@ -23,6 +23,22 @@ services:
     command: ["python", "-c", "print('sandbox image ready')"]
     network_mode: none
 
+  # Local voice (Piper text to speech), used when the Gemini voice is out of quota. No
+  # published port and no internet at runtime: only the API talks to it.
+  voice:
+    build:
+      context: services/voice
+    image: assistant-voice:latest
+    environment:
+      LOCAL_TTS_SPEED: ${LOCAL_TTS_SPEED:-1.0}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8100/health'))['status'] == 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -32,6 +48,7 @@ services:
       # Inside Docker, Qdrant is reached by its service name, not localhost.
       QDRANT_URL: http://qdrant:6333
       DATA_DIR: /app/data
+      LOCAL_VOICE_URL: ${LOCAL_VOICE_URL:-http://voice:8100}
       # The Obsidian vault is mounted at /vault only when OBSIDIAN_VAULT is set in .env.
       VAULT_DIR: ${OBSIDIAN_VAULT:+/vault}
       # Your projects folder (e.g. Documents) at /projects, only when PROJECTS_HOST is set.
