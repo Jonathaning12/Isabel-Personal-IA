@@ -6,19 +6,23 @@ POST /chat/{thread_id}/confirm   → approve or reject the pending action, then 
 """
 
 import json
+import logging
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from assistant.agent.clock import describe_now
 from assistant.agent.graph import CLIENT_ACTION, payload_fingerprint
+from assistant.memory.habits import artist_from_play
 
 router = APIRouter()
+logger = logging.getLogger("assistant.chat")
 
 MAX_MESSAGE_CHARS = 8000
+MIN_LEARN_CHARS = 15  # "pon música", "gracias"… hold no facts
 
 
 class ChatRequest(BaseModel):
@@ -29,6 +33,10 @@ class ChatRequest(BaseModel):
     timezone: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_+\-/]+$")
     # The project folder selected in the app (relative to the projects folder).
     project: str | None = Field(default=None, max_length=200, pattern=r"^[^\"\n\r]+$")
+    # The name the user set in the app (greetings, reminders).
+    user_name: str | None = Field(default=None, max_length=40, pattern=r"^[^\n\r<>{}]+$")
+    # True for messages the app sends on its own (the morning greeting): never learned from.
+    automatic: bool = False
 
 
 class ConfirmRequest(BaseModel):
@@ -59,8 +67,21 @@ async def _pending(request: Request, thread_id: str) -> dict[str, Any] | None:
     return interrupts[0].value if interrupts else None
 
 
+async def learn_quietly(request: Request, message: str) -> None:
+    """Background learning: durable facts the user mentions in passing ("trabajo en…",
+    "soy vegetariano"). Only the user's own words are used, never documents or tool
+    output; the facts appear in the app's Memory panel, where they can be deleted."""
+    try:
+        learned = await request.app.state.facts.learn(message, source="learned")
+    except Exception as exc:  # learning is best effort: it never breaks the chat
+        logger.warning("auto_learn_failed error=%s", type(exc).__name__)
+        return
+    if learned:
+        logger.info("auto_learn facts=%d", len(learned))
+
+
 @router.post("/chat")
-async def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
+async def chat(request: Request, body: ChatRequest, background: BackgroundTasks) -> dict[str, Any]:
     thread_id = body.thread_id or uuid.uuid4().hex
     if await _pending(request, thread_id) is not None:
         raise HTTPException(409, "There is an action waiting for approval in this conversation")
@@ -68,8 +89,12 @@ async def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
         "messages": [{"role": "user", "content": body.message}],
         "now": describe_now(body.local_time, body.timezone),
         "project": body.project,
+        "user_name": body.user_name,
     }
     result = await request.app.state.graph.ainvoke(turn, _config(thread_id))
+    settings = request.app.state.settings
+    if settings.auto_learn and not body.automatic and len(body.message) >= MIN_LEARN_CHARS:
+        background.add_task(learn_quietly, request, body.message)
     return _response(thread_id, result)
 
 
@@ -115,6 +140,10 @@ async def client_result(
         raise HTTPException(409, "This result belongs to another action")
     if len(json.dumps(body.result, ensure_ascii=False)) > MAX_CLIENT_RESULT_CHARS:
         raise HTTPException(413, "Result too large")
+    if pending.get("tool") == "spotify_play" and body.result.get("status") == "ok":
+        # A habit learned by watching: what the user listens to.
+        artist, title = artist_from_play(pending.get("args") or {}, body.result)
+        request.app.state.habits.record_music(artist, title)
     resume = {"tool_call_id": body.tool_call_id, "client_result": body.result}
     result = await request.app.state.graph.ainvoke(Command(resume=resume), _config(thread_id))
     return _response(thread_id, result)

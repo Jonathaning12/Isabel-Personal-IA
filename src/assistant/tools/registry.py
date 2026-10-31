@@ -196,6 +196,23 @@ class SetReminderArgs(BaseModel):
         description="Exact local time, ISO 8601 with offset, e.g. 2026-10-31T07:00:00-06:00 "
         "(compute it from NOW). Give either in_minutes or at.",
     )
+    repeat: Literal["none", "daily", "weekdays", "weekly"] = Field(
+        default="none", description="Repeat every day, Monday to Friday, or every week"
+    )
+    heads_up_minutes: int = Field(
+        default=0, ge=0, le=60, description="Warn this many minutes before the time"
+    )
+
+
+class MorningGreetingArgs(BaseModel):
+    enabled: bool = True
+    mode: Literal["fixed", "auto"] = Field(
+        default="fixed",
+        description="fixed: at `time`; auto: when the user first uses the PC in the morning",
+    )
+    time: str | None = Field(
+        default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="HH:MM, 24 h (fixed)"
+    )
 
 
 class ReminderIdArgs(BaseModel):
@@ -421,6 +438,13 @@ TOOLS: dict[str, Tool] = {
             "set_reminder",
             "Set a reminder or timer that notifies the user (with voice) at a time.",
             SetReminderArgs,
+            side_effect=False,
+            client_side=True,
+        ),
+        Tool(
+            "set_morning_greeting",
+            "Set when Isabel greets the user with the morning briefing without being asked.",
+            MorningGreetingArgs,
             side_effect=False,
             client_side=True,
         ),

@@ -24,6 +24,7 @@ from assistant.llm.chat import ChatClient
 from assistant.llm.client import build_client
 from assistant.llm.embeddings import Embedder
 from assistant.memory.facts import FactMemory
+from assistant.memory.habits import HabitLog
 from assistant.memory.retrieval import Retriever
 from assistant.memory.store import MemoryStore, build_qdrant
 from assistant.sandbox.docker_runner import DockerRunner
@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Conversation state (LangGraph checkpoints) persists in data/checkpoints.sqlite.
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     app.state.skills = SkillStore(settings.data_dir / "skills.json")
+    app.state.habits = HabitLog(settings.data_dir / "habits.json")
     vault_dir = settings.vault_dir
     app.state.vault = (
         Vault(vault_dir, settings.data_dir / "note-backups")
@@ -86,6 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             vault=app.state.vault,
             ingestor=app.state.ingestor,
             workspace=app.state.workspace,
+            habits=app.state.habits,
         )
         app.state.graph = build_graph(deps, checkpointer)
         yield

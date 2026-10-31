@@ -18,3 +18,4 @@ class AgentState(TypedDict, total=False):
     previous_sources: list[str]  # sources cited in the previous answer ("where did you get that?")
     now: str  # the user's local date and time for this turn, sent by the client
     project: str | None  # the project folder selected in the app ("esta carpeta")
+    user_name: str | None  # the name the user set in the app, if any

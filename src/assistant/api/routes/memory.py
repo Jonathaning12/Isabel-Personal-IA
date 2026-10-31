@@ -88,6 +88,19 @@ async def learn(request: Request, body: LearnRequest) -> dict:
     return {"facts": [r.model_dump() for r in results]}
 
 
+@router.get("/habits")
+async def habits(request: Request) -> dict:
+    """What Isabel learned by watching (today: the most played artists)."""
+    top = request.app.state.habits.top_artists(limit=10)
+    return {"artists": [{"name": name, "plays": plays} for name, plays in top]}
+
+
+@router.delete("/habits")
+async def forget_habits(request: Request) -> dict:
+    request.app.state.habits.clear()
+    return {"deleted": True}
+
+
 @router.delete("/memory/facts/{fact_id}")
 async def forget_fact(request: Request, fact_id: str) -> dict:
     if not await request.app.state.facts.forget(fact_id):

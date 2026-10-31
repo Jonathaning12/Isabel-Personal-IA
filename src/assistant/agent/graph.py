@@ -31,6 +31,7 @@ from assistant.agent.prompts import (
     AGENT_SYSTEM,
     ALL_REJECTED_ANSWER,
     FACTS_BLOCK,
+    HABITS_BLOCK,
     NO_NOTES_CONTEXT,
     NOTES_UNAVAILABLE,
     PREVIOUS_SOURCES_BLOCK,
@@ -41,6 +42,7 @@ from assistant.agent.state import AgentState
 from assistant.config import Settings
 from assistant.guardrails.audit import AuditLog
 from assistant.memory.facts import FactMemory, SupportsComplete
+from assistant.memory.habits import HabitLog
 from assistant.memory.retrieval import Citation, Retriever
 from assistant.sandbox.base import SandboxRunner
 from assistant.skills.store import Skill, SkillStore, build_program
@@ -66,6 +68,7 @@ class AgentDeps:
     vault: Vault | None = None  # the user's Obsidian vault, if configured
     ingestor: SupportsIngest | None = None  # re-indexes notes after write_note
     workspace: Workspace | None = None  # the user's projects folder (folders, git)
+    habits: HabitLog | None = None  # what Isabel learned by watching (music)
 
 
 def build_system_prompt(
@@ -78,8 +81,17 @@ def build_system_prompt(
     now: str | None = None,
     project: str | None = None,
     projects_name: str = "Documentos",
+    habits: list[str] | None = None,
+    user_name: str | None = None,
 ) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
+    habits_block = HABITS_BLOCK.format(habits="\n".join(f"- {h}" for h in habits)) if habits else ""
+    user_block = (
+        f"The user's name is {user_name}. Use it now and then (greetings, reminders), not "
+        "in every answer."
+        if user_name
+        else ""
+    )
     sources_block = (
         PREVIOUS_SOURCES_BLOCK.format(sources="\n".join(f"- {s}" for s in previous_sources))
         if previous_sources
@@ -109,6 +121,8 @@ def build_system_prompt(
             else "No current project is selected: if the user says 'esta carpeta', ask which one."
         ),
         facts_block=facts_block,
+        habits_block=habits_block,
+        user_block=user_block,
         skills_block=skills_block,
         previous_sources_block=sources_block,
         context_block=context_block,
@@ -223,6 +237,8 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             now=state.get("now"),
             project=state.get("project"),
             projects_name=deps.settings.projects_name,
+            habits=deps.habits.describe() if deps.habits else None,
+            user_name=state.get("user_name"),
         )
         reply = await deps.chat.complete(
             [{"role": "system", "content": system}, *state["messages"]],

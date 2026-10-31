@@ -109,9 +109,10 @@ class FactMemory:
         )
         return parse_facts_json(response.content or "")
 
-    async def learn(self, message: str) -> list[RememberResult]:
+    async def learn(self, message: str, source: str = "conversation") -> list[RememberResult]:
         """Extract durable facts from a message and store them (deduplicated)."""
-        return [await self.remember(f.fact, f.category) for f in await self.extract(message)]
+        facts = await self.extract(message)
+        return [await self.remember(f.fact, f.category, source) for f in facts]
 
     async def relevant(self, query_vector: list[float], *, k: int = 5) -> list[str]:
         """Facts related to the current question, to personalize the answer."""
