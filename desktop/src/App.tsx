@@ -44,6 +44,8 @@ export function App() {
     voiceEngine: settings.voiceEngine,
     naturalVoice: settings.naturalVoice,
     project: settings.currentProject,
+    userName: settings.userName,
+    handsFree: settings.wakeWord,
     onDataChanged: () => setRefreshKey((k) => k + 1),
   });
   const [pulseKey, setPulseKey] = useState(0);
@@ -98,15 +100,25 @@ export function App() {
 
   // Reminders come from the main process (also while the window is in the tray).
   const { announce, log, setNotice: showNotice } = assistant;
+  const userName = settings.userName;
   useEffect(() => {
-    const unsubscribe = window.assistant?.onReminder(({ text }) => {
+    const unsubscribe = window.assistant?.onReminder(({ text, at, early }) => {
       setPulseKey((k) => k + 1);
       showNotice(`⏰ Recordatorio: ${text}`);
       log({ kind: "message", title: "Recordatorio", detail: text, status: "warn" });
-      void announce(`Recordatorio: ${text}`);
+      void announce(reminderPhrase(text, userName, early && at ? new Date(at) : null));
     });
     return unsubscribe;
-  }, [announce, log, showNotice]);
+  }, [announce, log, showNotice, userName]);
+
+  // Morning greeting: the main process says when (learned or fixed time); Isabel then
+  // gives the briefing on her own, unless she is busy with something else.
+  const morning = useRef(() => {});
+  morning.current = () => {
+    if (assistant.busy || assistant.pending || assistant.phase === "listening") return;
+    void assistant.send("[automatic morning greeting] Buenos días", false, true);
+  };
+  useEffect(() => window.assistant?.onMorning(() => morning.current()), []);
 
   // Hide the notice after a while.
   const { notice, setNotice } = assistant;
@@ -115,6 +127,35 @@ export function App() {
     const timer = window.setTimeout(() => setNotice(null), 6000);
     return () => window.clearTimeout(timer);
   }, [notice, setNotice]);
+
+  const toggleMic = () => {
+    if (settings.wakeWord) assistant.stopListeningAndTalking();
+    update({ ...settings, wakeWord: !settings.wakeWord });
+  };
+
+  // Floating status bar (main process): report the state, and accept its two commands.
+  const lastAnswer = [...assistant.messages].reverse().find((m) => m.role === "assistant");
+  const statusPhase = assistant.pending ? "awaiting" : assistant.phase;
+  useEffect(() => {
+    window.assistant?.reportStatus({
+      phase: statusPhase,
+      micOn: settings.wakeWord,
+      wakeReady: wakeStatus === "ready",
+      statusBar: settings.statusBar,
+      answer: lastAnswer?.text ?? "",
+      answerId: lastAnswer ? String(lastAnswer.id) : "",
+    });
+  }, [statusPhase, settings.wakeWord, settings.statusBar, wakeStatus, lastAnswer]);
+  const commands = useRef({ toggleMic, send: assistant.send });
+  commands.current = { toggleMic, send: assistant.send };
+  useEffect(
+    () =>
+      window.assistant?.onStatusBarCommand((command) => {
+        if (command.type === "toggleMic") commands.current.toggleMic();
+        else void commands.current.send(command.text);
+      }),
+    [],
+  );
 
   const toggleSidebar = () => update({ ...settings, sidebarOpen: !settings.sidebarOpen });
   const orbState = preview ?? assistant.orbState;
@@ -173,10 +214,7 @@ export function App() {
           <button
             type="button"
             className={`icon-button ${settings.wakeWord ? "" : "icon-button--muted"}`}
-            onClick={() => {
-              if (settings.wakeWord) assistant.stopListeningAndTalking();
-              update({ ...settings, wakeWord: !settings.wakeWord });
-            }}
+            onClick={toggleMic}
             aria-label={settings.wakeWord ? "Silenciar el micrófono: Isabel deja de escuchar" : "Activar el micrófono"}
             title={settings.wakeWord ? "Silenciar micrófono" : "Micrófono silenciado (pulsa para activar)"}
           >
@@ -293,6 +331,24 @@ export function App() {
       ) : null}
     </div>
   );
+}
+
+/** "Jonathan, no te olvides de regar las plantas. Ya casi son las 7 de la tarde." */
+function reminderPhrase(text: string, name: string, soon: Date | null): string {
+  const task = text.trim().replace(/[.!]+$/, "");
+  const lead = name ? `${name}, no` : "No";
+  const remind = /^(no |hoy |ya )/i.test(task) ? `${name ? `${name}, ` : ""}${task}.` : `${lead} te olvides de ${task}.`;
+  return soon ? `${remind} Ya casi son ${spokenTime(soon)}.` : remind;
+}
+
+/** 19:00 → "las 7 de la tarde"; 13:30 → "la 1 y media de la tarde". */
+function spokenTime(date: Date): string {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const hour12 = hours % 12 || 12;
+  const part = hours < 12 ? "de la mañana" : hours < 20 ? "de la tarde" : "de la noche";
+  const extra = minutes === 0 ? "" : minutes === 30 ? " y media" : minutes === 15 ? " y cuarto" : ` y ${minutes}`;
+  return `${hour12 === 1 ? "la" : "las"} ${hour12}${extra} ${part}`;
 }
 
 function previewPhase(state: OrbState): keyof typeof STATUS_LABELS {

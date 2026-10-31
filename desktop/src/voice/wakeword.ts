@@ -6,8 +6,12 @@
 // recognizer light and avoids false triggers. No audio leaves the machine here: only after
 // the wake word does the app record the command and send it for transcription.
 //
-// The last PREROLL_SECONDS of audio are kept, so a command said right after the name
-// ("Isabel, ¿qué hora es?") is not cut off when recording starts.
+// "Isabel" only counts on a complete utterance recognized with MIN_WAKE_CONFIDENCE: with a
+// two-word grammar, early partial guesses turned ordinary conversation into "isabel" and
+// started recordings nobody asked for. Because the decision comes at the end of the
+// utterance, the last PREROLL_SECONDS of audio are kept, so a command said in the same
+// breath ("Isabel, ¿qué hora es?") is not cut off. The app then checks that the
+// transcription really contains the name (requestAfterName) before doing anything.
 
 import { createModel, type KaldiRecognizer, type Model } from "vosk-browser";
 
@@ -21,7 +25,8 @@ const YES = ["apruebo", "confirmo"];
 const NO = ["no", "rechazar", "rechazo", "cancelar", "cancela"];
 const FILLER = ["sí"];
 const MIN_YES_CONFIDENCE = 0.9;
-const PREROLL_SECONDS = 1.5;
+const MIN_WAKE_CONFIDENCE = 0.8;
+const PREROLL_SECONDS = 6;
 const COOLDOWN_MS = 2500;
 const RESUME_GRACE_MS = 1200; // ignore results right after a mode starts
 
@@ -98,6 +103,7 @@ function build(
 ): WakeListener {
   const rate = context.sampleRate;
   const wake = new model.KaldiRecognizer(rate, JSON.stringify([WAKE_WORD, "[unk]"]));
+  wake.setWords(true); // per-word confidence, required to wake
   const confirm = new model.KaldiRecognizer(rate, JSON.stringify([...YES, ...NO, ...FILLER, "[unk]"]));
   confirm.setWords(true); // per-word confidence, required to approve
   const source = context.createMediaStreamSource(stream);
@@ -120,17 +126,18 @@ function build(
     ignoreUntil = performance.now() + RESUME_GRACE_MS;
   };
 
-  const heardWake = (text: string | undefined) => {
-    if (mode !== "wake" || !text || !text.split(/\s+/).includes(WAKE_WORD)) return;
+  wake.on("result", (m) => {
+    if (mode !== "wake") return;
+    const words = (m as { result?: { result?: HeardWord[] } }).result?.result ?? [];
+    const name = words.find((w) => w.word === WAKE_WORD);
+    if (!name) return;
+    console.info(`wake word candidate: ${words.map((w) => `${w.word}(${w.conf.toFixed(2)})`).join(" ")}`);
     const now = performance.now();
-    if (now < ignoreUntil || now - lastWake < COOLDOWN_MS) return;
+    if (name.conf < MIN_WAKE_CONFIDENCE || now < ignoreUntil || now - lastWake < COOLDOWN_MS) return;
     lastWake = now;
     setMode("off"); // the app sets the next mode once it is idle again
     onWake();
-  };
-  // Partial results trigger as soon as the word is heard, without waiting for silence.
-  wake.on("partialresult", (m) => heardWake((m as { result?: { partial?: string } }).result?.partial));
-  wake.on("result", (m) => heardWake((m as { result?: { text?: string } }).result?.text));
+  });
 
   // Approvals only count on a complete utterance ("result"), never on a partial guess.
   confirm.on("result", (m) => {
@@ -175,10 +182,26 @@ function build(
   };
 }
 
+// Transcription often mishears the name ("Israel y nosotros…" for "Isabel, nosotros…").
+const NAME = "(isabel+a?|isab[eé]l|israel|isable|y\\s+sabel|y\\s+isabel)";
+
+/** What was said after the name: "…bueno. Isabel, pon música" → "pon música".
+ * "" if only the name was said; null if the name is not there at all (a false wake-up:
+ * the recording is then dropped and nothing is sent to the agent). */
+export function requestAfterName(text: string): string | null {
+  const match = new RegExp(`(^|[^a-záéíóúñ])${NAME}(?![a-záéíóúñ])`, "i").exec(text);
+  if (!match) return null;
+  // "le dije a Isabel…", "la casa de Isabel": talking about her, not to her.
+  if (/(^|\s)(a|de|con|para|la|por)\s*$/i.test(text.slice(0, match.index + match[1].length))) return null;
+  return text
+    .slice(match.index + match[0].length)
+    .replace(/^(\s+y\b)?[\s,.:;!?-]*/i, "")
+    .trim();
+}
+
 /** "Isabel, ¿qué hora es?" → "¿qué hora es?" (the name is how she was called, not the request). */
 export function stripWakeWord(text: string): string {
-  // Transcription often mishears the name ("Israel y nosotros…" for "Isabel, nosotros…").
-  const name = "(isabel+a?|isab[eé]l|israel|isable|y\\s+sabel|y\\s+isabel)";
+  const name = NAME;
   const pattern = new RegExp(`^\\s*[¡¿]?\\s*(oye\\s+|hola\\s+)?${name}\\b(\\s+y\\b)?[\\s,.:;!¡?¿-]*`, "i");
   return text.replace(pattern, "").trim() || text.trim();
 }

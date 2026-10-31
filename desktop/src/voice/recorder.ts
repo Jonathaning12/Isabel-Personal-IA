@@ -22,9 +22,17 @@ interface Options {
   preroll?: { samples: Float32Array; rate: number };
   /** Silence that ends the recording; longer after the wake word, people pause after a name. */
   silenceMs?: number;
+  /** Give up after this long if nobody talks (the follow-up window waits longer). */
+  noSpeechMs?: number;
 }
 
-export async function startRecording({ onLevel, onAutoStop, preroll, silenceMs = SILENCE_MS }: Options): Promise<Recording> {
+export async function startRecording({
+  onLevel,
+  onAutoStop,
+  preroll,
+  silenceMs = SILENCE_MS,
+  noSpeechMs = NO_SPEECH_MS,
+}: Options): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   });
@@ -53,7 +61,7 @@ export async function startRecording({ onLevel, onAutoStop, preroll, silenceMs =
       lastSpeech = now;
     }
     const silentTooLong = heardSpeech && now - lastSpeech > silenceMs;
-    const nobodyTalked = !heardSpeech && now - started > NO_SPEECH_MS;
+    const nobodyTalked = !heardSpeech && now - started > noSpeechMs;
     if (silentTooLong || nobodyTalked || now - started > MAX_SECONDS * 1000) onAutoStop();
   };
   source.connect(processor);

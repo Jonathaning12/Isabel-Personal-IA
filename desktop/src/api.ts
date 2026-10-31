@@ -55,6 +55,7 @@ export interface Fact {
   id: string;
   fact: string;
   category: string;
+  source?: string; // "learned" = picked up from a conversation without being asked
 }
 
 export interface Skill {
@@ -88,6 +89,18 @@ export interface IngestResult {
   message: string;
 }
 
+export interface MorningSettings {
+  enabled: boolean;
+  mode: "fixed" | "auto";
+  time: string | null; // "07:00" (fixed mode)
+  learned: string | null; // the time the user usually starts the day, once learned
+}
+
+interface ChatExtra {
+  userName?: string;
+  automatic?: boolean; // sent by the app on its own (morning greeting): not learned from
+}
+
 interface BridgeResult<T> {
   ok: boolean;
   status: number;
@@ -111,7 +124,21 @@ interface Bridge {
     threadId: string,
     toolCallId: string,
   ): Promise<Record<string, unknown>>;
-  onReminder(callback: (reminder: { text: string }) => void): () => void;
+  onReminder(callback: (reminder: { text: string; at?: number; early?: boolean }) => void): () => void;
+  onMorning(callback: () => void): () => void;
+  morningSettings(): Promise<MorningSettings | null>;
+  setMorning(value: { enabled: boolean; mode: "fixed" | "auto"; time: string | null }): Promise<
+    (MorningSettings & { status: string; error?: string }) | null
+  >;
+  reportStatus(status: {
+    phase: string;
+    micOn: boolean;
+    wakeReady: boolean;
+    statusBar: boolean;
+    answer: string;
+    answerId: string;
+  }): void;
+  onStatusBarCommand(callback: (command: { type: "toggleMic" } | { type: "send"; text: string }) => void): () => void;
   spotifyStatus(): Promise<{ connected: boolean; clientId: string } | null>;
   spotifyConnect(clientId: string): Promise<{ ok: boolean; error?: string }>;
   spotifyDisconnect(): Promise<{ ok: boolean }>;
@@ -203,8 +230,18 @@ function request<T>(method: string, route: string, body?: unknown): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string; models: { llm: string; embeddings: string } }>("GET", "/health"),
-  chat: (message: string, threadId: string | null, project: string | null) =>
-    request<ChatResponse>("POST", "/chat", { message, thread_id: threadId, project, ...localClock() }),
+  chat: (message: string, threadId: string | null, project: string | null, extra: ChatExtra = {}) =>
+    request<ChatResponse>("POST", "/chat", {
+      message,
+      thread_id: threadId,
+      project,
+      // The API only accepts a plain one-line name.
+      user_name: (extra.userName ?? "").replace(/[\r\n<>{}]/g, "").trim().slice(0, 40) || null,
+      automatic: extra.automatic ?? false,
+      ...localClock(),
+    }),
+  habits: () => request<{ artists: { name: string; plays: number }[] }>("GET", "/habits"),
+  clearHabits: () => request("DELETE", "/habits"),
   projects: () => request<ProjectsInfo>("GET", "/projects"),
   confirm: (threadId: string, decision: "approve" | "reject") =>
     request<ChatResponse>("POST", `/chat/${threadId}/confirm`, { decision }),

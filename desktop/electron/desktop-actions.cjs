@@ -7,7 +7,7 @@
 // executable extensions are never opened. Writing the clipboard, saving a routine and
 // taking a screenshot are approved by the user in the chat before they reach this file.
 
-const { app, Notification, clipboard, desktopCapturer, screen, shell } = require("electron");
+const { app, Notification, clipboard, desktopCapturer, powerMonitor, screen, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
@@ -68,12 +68,31 @@ function showWindow() {
   window.focus();
 }
 
+const REPEATS = new Set(["none", "daily", "weekdays", "weekly"]);
+// A reminder fires `headsUp` minutes before its time ("ya casi son las 7").
+const fireTime = (r) => r.at - (r.headsUp ?? 0) * 60_000;
+
+/** The next time a repeating reminder is due, strictly after `now` (missed ones are skipped). */
+function nextOccurrence(at, repeat, now) {
+  const next = new Date(at);
+  do {
+    next.setDate(next.getDate() + (repeat === "weekly" ? 7 : 1));
+    while (repeat === "weekdays" && (next.getDay() === 0 || next.getDay() === 6)) next.setDate(next.getDate() + 1);
+  } while (next.getTime() <= now);
+  return next.getTime();
+}
+
 async function fireDueReminders() {
   const due = await serial(async () => {
     const reminders = await readJson("reminders.json", []);
     const now = Date.now();
-    const ready = reminders.filter((r) => r.at <= now);
-    if (ready.length) await writeJson("reminders.json", reminders.filter((r) => r.at > now));
+    const ready = reminders.filter((r) => fireTime(r) <= now);
+    if (!ready.length) return [];
+    const kept = reminders
+      .map((r) => (fireTime(r) > now ? r : r.repeat && r.repeat !== "none" ? { ...r, at: nextOccurrence(r.at, r.repeat, now) } : null))
+      .filter(Boolean)
+      .sort((a, b) => fireTime(a) - fireTime(b));
+    await writeJson("reminders.json", kept);
     return ready;
   });
   for (const reminder of due) {
@@ -83,9 +102,83 @@ async function fireDueReminders() {
       notification.show();
     }
     // The page says it aloud and shows it (works even with the window in the tray).
-    config.getWindow()?.webContents.send("reminder", { text: reminder.text });
+    config.getWindow()?.webContents.send("reminder", { text: reminder.text, at: reminder.at, early: (reminder.headsUp ?? 0) > 0 });
     config.getWindow()?.flashFrame(true);
   }
+}
+
+// ---- morning greeting -----------------------------------------------------------------
+// Isabel says "buenos días" with the briefing without being asked, once a day:
+// - "fixed": at the chosen time (or at the first moment the user is at the PC after it);
+// - "auto": when the user first uses the PC in the morning. The time they usually start
+//   (median of the last 14 days) is learned, so an early boot does not trigger it.
+// Only while the PC is in use (not locked or idle) and before noon.
+const MORNING_FILE = "morning.json";
+const MORNING_DEFAULT = { enabled: true, mode: "auto", time: null, lastGreeted: null, lastStartDay: null, starts: [] };
+const ACTIVE_IDLE_S = 120;
+const DAY_STARTS_AT = 4 * 60; // activity before 4:00 belongs to the previous night
+const MORNING_ENDS_AT = 12 * 60;
+
+const dayKey = (date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+const toMinutes = (hhmm) => {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? ""));
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+};
+const toClock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+function learnedStart(starts) {
+  const minutes = starts.map(toMinutes).filter((m) => m !== null).sort((a, b) => a - b);
+  return minutes.length >= 3 ? minutes[Math.floor(minutes.length / 2)] : null;
+}
+
+async function readMorning() {
+  const saved = await readJson(MORNING_FILE, {});
+  return { ...MORNING_DEFAULT, ...(saved && typeof saved === "object" ? saved : {}) };
+}
+
+async function checkMorning() {
+  const state = powerMonitor.getSystemIdleState(ACTIVE_IDLE_S); // active | idle | locked
+  if (state !== "active") return;
+  const now = new Date();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const today = dayKey(now);
+  const greet = await serial(async () => {
+    const morning = await readMorning();
+    let changed = false;
+    if (minutes >= DAY_STARTS_AT && morning.lastStartDay !== today) {
+      morning.starts = [...morning.starts, toClock(minutes)].slice(-14); // when the day started
+      morning.lastStartDay = today;
+      changed = true;
+    }
+    const learned = learnedStart(morning.starts.slice(0, -1)); // without today's
+    const target =
+      morning.mode === "fixed" ? toMinutes(morning.time) : learned !== null ? Math.max(DAY_STARTS_AT, learned - 30) : DAY_STARTS_AT;
+    const due = morning.enabled && morning.lastGreeted !== today && target !== null && minutes >= target && minutes < MORNING_ENDS_AT;
+    if (due) {
+      morning.lastGreeted = today;
+      changed = true;
+    }
+    if (changed) await writeJson(MORNING_FILE, morning);
+    return due;
+  });
+  if (greet) config.getWindow()?.webContents.send("morning");
+}
+
+async function morningSettings() {
+  const morning = await readMorning();
+  const learned = learnedStart(morning.starts);
+  return { enabled: morning.enabled, mode: morning.mode, time: morning.time, learned: learned === null ? null : toClock(learned) };
+}
+
+async function setMorningGreeting({ enabled = true, mode = "fixed", time = null }) {
+  if (!["fixed", "auto"].includes(mode)) return { status: "error", error: "mode must be fixed or auto" };
+  if (mode === "fixed" && toMinutes(time) === null) return { status: "error", error: "Give time as HH:MM" };
+  await serial(async () => {
+    const morning = await readMorning();
+    await writeJson(MORNING_FILE, { ...morning, enabled: Boolean(enabled), mode, time: mode === "fixed" ? time : morning.time });
+  });
+  const saved = await morningSettings();
+  return { status: "ok", ...saved };
 }
 
 let loopStarted = false;
@@ -94,34 +187,46 @@ let loopStarted = false;
 function startReminders() {
   if (loopStarted) return;
   loopStarted = true;
-  void fireDueReminders();
-  setInterval(() => void fireDueReminders(), CHECK_EVERY_MS);
+  const tick = () => {
+    void fireDueReminders();
+    void checkMorning().catch(() => undefined);
+  };
+  tick();
+  setInterval(tick, CHECK_EVERY_MS);
 }
 
 function formatTime(ms) {
   return new Date(ms).toLocaleString("es", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
-async function setReminder({ text, in_minutes: inMinutes, at }) {
+const REPEAT_LABELS = { daily: "todos los días", weekdays: "de lunes a viernes", weekly: "cada semana" };
+
+async function setReminder({ text, in_minutes: inMinutes, at, repeat = "none", heads_up_minutes: headsUp = 0 }) {
   const message = String(text ?? "").trim().slice(0, 300);
   if (!message) return { status: "error", error: "Empty reminder" };
   let when = null;
   if (typeof inMinutes === "number" && inMinutes > 0) when = Date.now() + inMinutes * 60_000;
   else if (typeof at === "string") when = Date.parse(at);
   if (!when || Number.isNaN(when)) return { status: "error", error: "Give in_minutes or a valid ISO time in `at`" };
+  // "Todos los días a las 7" said in the evening starts tomorrow.
+  if (when < Date.now() && REPEATS.has(repeat) && repeat !== "none") when = nextOccurrence(when, repeat, Date.now());
   if (when < Date.now() - 60_000) return { status: "error", error: "That time has already passed" };
   if (when > Date.now() + MAX_REMINDER_DAYS * 86_400_000) return { status: "error", error: "Reminders up to 30 days ahead" };
-  const reminder = { id: crypto.randomBytes(3).toString("hex"), text: message, at: when };
+  if (!REPEATS.has(repeat)) return { status: "error", error: "repeat: none, daily, weekdays or weekly" };
+  const minutesBefore = Math.min(Math.max(Math.round(Number(headsUp) || 0), 0), 60);
+  const reminder = { id: crypto.randomBytes(3).toString("hex"), text: message, at: when, repeat, headsUp: minutesBefore };
   await serial(async () => {
     const reminders = await readJson("reminders.json", []);
-    await writeJson("reminders.json", [...reminders, reminder].sort((a, b) => a.at - b.at));
+    await writeJson("reminders.json", [...reminders, reminder].sort((a, b) => fireTime(a) - fireTime(b)));
   });
-  return { status: "ok", id: reminder.id, text: message, when: formatTime(when) };
+  return { status: "ok", id: reminder.id, text: message, when: formatTime(when), repeat: REPEAT_LABELS[repeat] ?? "una vez" };
 }
 
 async function listReminders() {
   const reminders = await readJson("reminders.json", []);
-  return { reminders: reminders.map((r) => ({ id: r.id, text: r.text, when: formatTime(r.at) })) };
+  return {
+    reminders: reminders.map((r) => ({ id: r.id, text: r.text, when: formatTime(r.at), repeat: REPEAT_LABELS[r.repeat] ?? "una vez" })),
+  };
 }
 
 async function cancelReminder({ id }) {
@@ -388,6 +493,7 @@ async function lookAtScreen({ question }) {
 
 const HANDLERS = {
   set_reminder: setReminder,
+  set_morning_greeting: setMorningGreeting,
   list_reminders: listReminders,
   cancel_reminder: cancelReminder,
   open_app: openApp,
@@ -432,4 +538,4 @@ function needsApproval(tool, args) {
   }
 }
 
-module.exports = { init, runAction, showWindow, startReminders, needsApproval };
+module.exports = { init, runAction, showWindow, startReminders, needsApproval, morningSettings, setMorningGreeting };

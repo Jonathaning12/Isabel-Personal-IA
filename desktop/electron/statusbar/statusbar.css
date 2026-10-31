@@ -1,0 +1,271 @@
+/* Floating status bar. Collapsed: a thin strip at the top of the screen whose color shows
+   the state. Expanded (mouse nearby): a small glass pill with the state and buttons. */
+:root {
+  --text: #e9ecf2;
+  --muted: #8a8f9c;
+  --line: rgba(255, 255, 255, 0.12);
+  --accent: #5ad1ff;
+  --listen: #4dffc3;
+  --speak: #b59cff;
+  --warn: #ffc65c;
+  --error: #ff5c6c;
+  --state: rgba(255, 255, 255, 0.55); /* idle */
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font: 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  user-select: none;
+}
+
+/* ---- state colors (shared by the strip and the dot) ---- */
+body[data-phase="listening"],
+body[data-phase="transcribing"] {
+  --state: var(--listen);
+}
+
+body[data-phase="thinking"],
+body[data-phase="gathering"] {
+  --state: var(--accent);
+}
+
+body[data-phase="speaking"] {
+  --state: var(--speak);
+}
+
+body[data-phase="awaiting"] {
+  --state: var(--warn);
+}
+
+body[data-phase="error"] {
+  --state: var(--error);
+}
+
+body[data-phase="idle"][data-mic="off"] {
+  --state: color-mix(in srgb, var(--error) 55%, transparent);
+}
+
+/* ---- collapsed: the strip ---- */
+.handle {
+  display: none;
+  width: 110px;
+  height: 5px;
+  margin: 5px auto 0;
+  border-radius: 3px;
+  background: var(--state);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  transition: background 200ms ease;
+}
+
+body[data-mode="collapsed"] .handle {
+  display: block;
+}
+
+body[data-mode="collapsed"] .bar,
+body[data-mode="collapsed"] .answer {
+  display: none;
+}
+
+/* Busy states breathe, so a glance at the strip is enough. */
+body[data-phase="listening"] .handle,
+body[data-phase="transcribing"] .handle,
+body[data-phase="thinking"] .handle,
+body[data-phase="gathering"] .handle,
+body[data-phase="speaking"] .handle {
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+/* ---- expanded: the bar ---- */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  margin: 4px;
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(10, 12, 18, 0.86);
+  animation: open 160ms ease-out;
+}
+
+.dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--state);
+  transition: background 200ms ease;
+}
+
+body[data-phase="idle"][data-mic="on"] .dot {
+  background: var(--muted);
+}
+
+body[data-phase="idle"][data-wake="ready"][data-mic="on"] .dot {
+  background: color-mix(in srgb, var(--listen) 45%, var(--muted));
+}
+
+body[data-phase="listening"] .dot,
+body[data-phase="transcribing"] .dot,
+body[data-phase="thinking"] .dot,
+body[data-phase="gathering"] .dot,
+body[data-phase="speaking"] .dot {
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.name {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+body[data-phase="listening"] .label {
+  color: var(--listen);
+}
+
+.write {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.write[hidden] {
+  display: none;
+}
+
+.write input {
+  width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+}
+
+.write input:focus {
+  border-color: var(--accent);
+}
+
+/* While writing, the input takes the label's place. */
+.bar[data-writing="yes"] .label,
+.bar[data-writing="yes"] #type {
+  display: none;
+}
+
+.buttons {
+  display: flex;
+  gap: 2px;
+}
+
+button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+button:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#mic .icon-off,
+body[data-mic="off"] #mic .icon-on {
+  display: none;
+}
+
+body[data-mic="off"] #mic .icon-off {
+  display: block;
+}
+
+body[data-mic="off"] #mic {
+  color: var(--error);
+}
+
+.answer {
+  margin: 2px 8px 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(10, 12, 18, 0.86);
+  line-height: 1.4;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.answer[hidden] {
+  display: none;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(1.45);
+    opacity: 0.55;
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot,
+  .handle,
+  .bar {
+    animation: none !important;
+  }
+}

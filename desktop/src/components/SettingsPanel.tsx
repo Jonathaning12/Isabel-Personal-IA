@@ -7,6 +7,7 @@ import { saveSettings } from "../lib/storage";
 import { loadVoices, playSpeech } from "../voice/speech";
 import type { WakeState } from "../voice/useWakeWord";
 import { CloseIcon } from "./Icons";
+import { MorningSettings } from "./MorningSettings";
 
 interface Props {
   open: boolean;
@@ -266,7 +267,10 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
               <button type="button" className="button button--ghost button--block" onClick={() => void testVoice()} disabled={testing}>
                 {testing ? "Generando…" : "Probar esta voz"}
               </button>
-              <p className="hint">Suena humana y suave. Tarda ~3 s en empezar; si falla, se usa la voz de Windows.</p>
+              <p className="hint">
+                Suena humana y suave. Si se acaba la cuota gratis de Gemini, habla una voz local (Piper) y, como último recurso, la
+                de Windows.
+              </p>
             </>
           ) : null}
           <label className="control" hidden={settings.voiceEngine === "natural"}>
@@ -288,6 +292,17 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
 
         {window.assistant ? (
           <Section title="Aplicación">
+            <label className="control">
+              <span className="control__label">Tu nombre</span>
+              <input
+                className="text-input"
+                value={settings.userName}
+                maxLength={40}
+                onChange={(e) => onChange({ ...settings, userName: e.target.value })}
+                placeholder="Para saludarte y en los recordatorios"
+              />
+            </label>
+            <MorningSettings />
             <label className="toggle">
               <input type="checkbox" checked={settings.closeToTray} onChange={(e) => onChange({ ...settings, closeToTray: e.target.checked })} />
               <span>Al cerrar, seguir en la bandeja del sistema</span>
@@ -295,6 +310,14 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
             <p className="hint">
               Así los recordatorios y «Isabel» siguen funcionando con la ventana cerrada. Para salir del todo: icono de la
               bandeja → Salir.
+            </p>
+            <label className="toggle">
+              <input type="checkbox" checked={settings.statusBar} onChange={(e) => onChange({ ...settings, statusBar: e.target.checked })} />
+              <span>Barra de estado arriba de la pantalla</span>
+            </label>
+            <p className="hint">
+              Con la ventana minimizada o en la bandeja, una barra pequeña muestra si Isabel te escucha, piensa o habla, con
+              botones para silenciar el micrófono y escribirle.
             </p>
           </Section>
         ) : null}

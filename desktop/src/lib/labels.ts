@@ -25,6 +25,7 @@ export const TOOL_LABELS: Record<string, string> = {
   now_playing: "Ver qué suena",
   spotify_play: "Poner música en Spotify",
   set_reminder: "Crear un recordatorio",
+  set_morning_greeting: "Programar los buenos días",
   list_reminders: "Revisar tus recordatorios",
   cancel_reminder: "Cancelar un recordatorio",
   open_app: "Abrir una app",

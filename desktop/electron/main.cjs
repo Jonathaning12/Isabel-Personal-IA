@@ -65,6 +65,8 @@ const ALLOWED_ROUTES = [
   /^GET \/skills$/,
   /^DELETE \/skills\/[a-z0-9_]{1,40}$/,
   /^GET \/vault$/,
+  /^GET \/habits$/,
+  /^DELETE \/habits$/,
   /^GET \/projects$/,
   /^POST \/vault\/sync$/,
 ];
@@ -337,8 +339,113 @@ function createWindow() {
       process.stderr.write(`[renderer] ${details.message}\n`);
     });
   }
+  // The floating status bar appears while this window is minimized or hidden.
+  for (const change of ["minimize", "restore", "hide", "show"]) window.on(change, updateStatusBar);
+  window.on("closed", () => statusWindow?.destroy());
   if (DEV_URL) window.loadURL(DEV_URL);
   else window.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+}
+
+// --- Floating status bar ----------------------------------------------------------------
+// A small always-on-top pill at the top of the screen: listening / thinking / speaking,
+// plus mute and "write" buttons. The main window owns the state and reports it here.
+// It rests as a thin strip (like a phone's home bar) and opens when the mouse comes near.
+const STATUS_SIZES = {
+  collapsed: { width: 220, height: 16, top: 0 },
+  expanded: { width: 440, height: 52, top: 6 },
+  answer: { width: 440, height: 140, top: 6 },
+};
+const STATUS_PAGE = path.join(__dirname, "statusbar", "statusbar.html");
+let statusWindow = null;
+let lastStatus = { phase: "idle", micOn: true, wakeReady: false, statusBar: true, answer: "", answerId: "" };
+
+function statusSender(event) {
+  return (event.senderFrame?.url ?? "") === pathToFileURL(STATUS_PAGE).toString();
+}
+
+function statusBounds(mode) {
+  const size = STATUS_SIZES[mode] ?? STATUS_SIZES.collapsed;
+  const area = screen.getPrimaryDisplay().workArea;
+  return { x: Math.round(area.x + (area.width - size.width) / 2), y: area.y + size.top, width: size.width, height: size.height };
+}
+
+function createStatusWindow() {
+  const window = new BrowserWindow({
+    ...statusBounds("collapsed"),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    show: false,
+    title: "Isabel · estado",
+    webPreferences: {
+      preload: path.join(__dirname, "statusbar-preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  window.setAlwaysOnTop(true, "floating");
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.webContents.on("did-finish-load", () => window.webContents.send("status", lastStatus));
+  window.on("closed", () => {
+    if (statusWindow === window) statusWindow = null;
+  });
+  window.loadFile(STATUS_PAGE);
+  statusWindow = window;
+}
+
+function updateStatusBar() {
+  const away = mainWindow && (!mainWindow.isVisible() || mainWindow.isMinimized());
+  if (away && lastStatus.statusBar && !quitting) {
+    if (!statusWindow) createStatusWindow();
+    if (!statusWindow.isVisible()) {
+      statusWindow.setBounds(statusBounds("collapsed"));
+      statusWindow.setIgnoreMouseEvents(true, { forward: true });
+      statusWindow.webContents.send("collapse");
+      statusWindow.showInactive(); // never steals the focus
+    }
+  } else if (statusWindow?.isVisible()) {
+    statusWindow.hide();
+  }
+}
+
+function onStatusUpdate(event, status) {
+  if (!trustedSender(event) || typeof status !== "object" || status === null) return;
+  lastStatus = {
+    phase: String(status.phase ?? "idle").slice(0, 20),
+    micOn: status.micOn === true,
+    wakeReady: status.wakeReady === true,
+    statusBar: status.statusBar !== false,
+    answer: String(status.answer ?? "").slice(0, 400),
+    answerId: String(status.answerId ?? "").slice(0, 40),
+  };
+  statusWindow?.webContents.send("status", lastStatus);
+  updateStatusBar();
+}
+
+// Only three commands, all things the user could do in the main window; the bar can never
+// approve an action.
+function onStatusBarCommand(event, command) {
+  if (!statusSender(event) || typeof command !== "object" || command === null) return;
+  if (command.type === "open") actions.showWindow();
+  else if (command.type === "toggleMic") mainWindow?.webContents.send("statusbar:command", { type: "toggleMic" });
+  else if (command.type === "send" && typeof command.text === "string" && command.text.trim()) {
+    mainWindow?.webContents.send("statusbar:command", { type: "send", text: command.text.trim().slice(0, 8000) });
+  }
+}
+
+function onStatusBarResize(event, mode) {
+  if (!statusSender(event) || !statusWindow || !Object.hasOwn(STATUS_SIZES, mode)) return;
+  statusWindow.setBounds(statusBounds(mode));
+  // Collapsed, clicks go through to whatever is underneath (Windows keeps the window
+  // taller than the strip); mouse moves are still forwarded so the strip can open.
+  statusWindow.setIgnoreMouseEvents(mode === "collapsed", { forward: true });
 }
 
 app.setAppUserModelId("Isabel"); // so Windows shows the app's notifications (reminders)
@@ -407,6 +514,13 @@ app.whenReady().then(async () => {
   ipcMain.handle("spotify:disconnect", (event) => (trustedSender(event) ? computer.disconnect() : { ok: false }));
   ipcMain.handle("window:info", (event) => (trustedSender(event) ? { customControls: material === "glass", material } : null));
   ipcMain.handle("window:control", windowControl);
+  ipcMain.handle("morning:get", (event) => (trustedSender(event) ? actions.morningSettings() : null));
+  ipcMain.handle("morning:set", (event, value) =>
+    trustedSender(event) && value && typeof value === "object" ? actions.setMorningGreeting(value) : null,
+  );
+  ipcMain.on("status:update", onStatusUpdate);
+  ipcMain.on("statusbar:command", onStatusBarCommand);
+  ipcMain.on("statusbar:resize", onStatusBarResize);
   ipcMain.handle("app:relaunch", (event) => {
     if (!trustedSender(event)) return false;
     app.relaunch();

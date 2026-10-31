@@ -48,6 +48,10 @@ export interface AppSettings {
   currentProject: string | null;
   /** Closing the window keeps Isabel running in the tray (reminders, "Isabel"). */
   closeToTray: boolean;
+  /** Small floating bar at the top of the screen while the window is minimized or hidden. */
+  statusBar: boolean;
+  /** How Isabel calls the user ("Jonathan, no te olvides de…"). */
+  userName: string;
 }
 
 /** Natural voices offered in the settings (Gemini prebuilt voices). */
@@ -161,6 +165,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   naturalVoice: "Achernar",
   currentProject: null,
   closeToTray: true,
+  statusBar: true,
+  userName: "",
 };
 
 const clamp = (v: unknown, min: number, max: number, fallback: number) =>
@@ -218,6 +224,8 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     currentProject:
       typeof saved.currentProject === "string" && saved.currentProject.length < 200 ? saved.currentProject : null,
     closeToTray: typeof saved.closeToTray === "boolean" ? saved.closeToTray : true,
+    statusBar: typeof saved.statusBar === "boolean" ? saved.statusBar : true,
+    userName: typeof saved.userName === "string" ? saved.userName.trim().slice(0, 40) : "",
     naturalVoice: NATURAL_VOICES.some((v) => v.id === saved.naturalVoice)
       ? (saved.naturalVoice as string)
       : DEFAULT_SETTINGS.naturalVoice,

@@ -46,6 +46,7 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
   const [tab, setTab] = useState<Tab>("activity");
   const [docs, setDocs] = useState<DocumentInfo[] | null>(null);
   const [facts, setFacts] = useState<Fact[] | null>(null);
+  const [habits, setHabits] = useState<{ name: string; plays: number }[]>([]);
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [projects, setProjects] = useState<ProjectsInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,14 +57,16 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, f, s, p] = await Promise.all([
+      const [d, f, s, p, h] = await Promise.all([
         api.documents(),
         api.facts(),
         api.skills(),
         api.projects().catch(() => ({ configured: false }) as ProjectsInfo),
+        api.habits().catch(() => ({ artists: [] })),
       ]);
       setDocs(d.documents);
       setFacts(f.facts);
+      setHabits(h.artists);
       setSkills(s.skills);
       setProjects(p);
     } catch (error) {
@@ -276,13 +279,35 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
 
         {tab === "memory" ? (
           <ul className="list">
-            {facts?.length === 0 ? <Empty>No recuerdo nada sobre ti todavía. Dime «recuerda que…».</Empty> : null}
+            {habits.length ? (
+              <>
+                <h3 className="list__section">Lo que más escuchas (aprendido)</h3>
+                <li className="list__item">
+                  <PulseIcon className="list__icon" />
+                  <div>
+                    <p className="list__title">{habits.slice(0, 5).map((a) => a.name).join(" · ")}</p>
+                    <p className="list__detail">Lo uso cuando dices «pon música» sin decir qué.</p>
+                  </div>
+                  <DeleteButton
+                    armed={confirming === "habits"}
+                    onClick={() => void remove("habits", () => api.clearHabits(), "Hábitos olvidados")}
+                  />
+                </li>
+                <h3 className="list__section">Datos sobre ti</h3>
+              </>
+            ) : null}
+            {facts?.length === 0 ? (
+              <Empty>Aún no sé nada de ti. Voy aprendiendo de lo que me cuentas, o dime «recuerda que…».</Empty>
+            ) : null}
             {facts?.map((f) => (
               <li key={f.id} className="list__item">
                 <BrainIcon className="list__icon" />
                 <div>
                   <p className="list__title">{f.fact}</p>
-                  <p className="list__detail">{f.category}</p>
+                  <p className="list__detail">
+                    {f.category}
+                    {f.source === "learned" ? " · aprendido de una conversación" : ""}
+                  </p>
                 </div>
                 <DeleteButton
                   armed={confirming === `fact:${f.id}`}
