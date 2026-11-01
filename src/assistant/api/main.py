@@ -15,6 +15,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from openai import APIConnectionError, APIStatusError
 
 from assistant.agent.graph import AgentDeps, build_graph
+from assistant.api.auth import load_or_create_token, require_token
 from assistant.api.routes import chat as chat_routes
 from assistant.api.routes import health, memory, projects, skills, vault, vision, voice
 from assistant.config import get_settings
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     chat = ChatClient(client, settings)
     embedder = Embedder(client, settings)
     app.state.settings = settings
+    app.state.api_token = load_or_create_token(settings)
     app.state.openai = client
     app.state.chat = chat
     app.state.embedder = embedder
@@ -97,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Personal AI Assistant", lifespan=lifespan)
+app.middleware("http")(require_token)
 
 
 @app.exception_handler(APIConnectionError)  # includes timeouts

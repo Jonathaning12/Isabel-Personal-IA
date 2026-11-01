@@ -21,7 +21,9 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from assistant.api.auth import client_token
 from assistant.cli import messages as msg
+from assistant.config import get_settings
 from assistant.ingest.loaders import SUPPORTED_EXTENSIONS
 
 app = typer.Typer(help="Asistente personal de IA privado.", no_args_is_help=True)
@@ -39,7 +41,10 @@ UPLOAD_BATCH = 10
 
 def _request(method: str, path: str, *, timeout: float = 120, **kwargs: Any) -> dict:
     try:
-        response = httpx.request(method, f"{API_URL}{path}", timeout=timeout, **kwargs)
+        headers = {"Authorization": f"Bearer {client_token(get_settings())}"}
+        response = httpx.request(
+            method, f"{API_URL}{path}", timeout=timeout, headers=headers, **kwargs
+        )
     except httpx.ConnectError:
         console.print(msg.API_UNREACHABLE.format(url=API_URL))
         raise typer.Exit(1) from None

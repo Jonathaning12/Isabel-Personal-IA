@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     api_url: str = "http://127.0.0.1:8000"  # used by the CLI
+    # Bearer token for every route but /health. Empty: generated once into data/api_token.
+    api_token: SecretStr = SecretStr("")
+    require_token: bool = True  # false only in unit tests
 
     # Privacy
     log_prompts: bool = False

@@ -22,7 +22,7 @@ const OPENABLE_FILES = new Set([
   "avi", "webm", "zip", "json", "html",
 ]); // fmt: skip
 
-let config = { apiUrl: "", getWindow: () => null, runMusic: async () => ({}) };
+let config = { apiUrl: "", apiFetch: fetch, getWindow: () => null, runMusic: async () => ({}) };
 
 function init(options) {
   config = { ...config, ...options };
@@ -322,7 +322,7 @@ let projectsRoot = null;
 async function getProjectsRoot() {
   if (projectsRoot !== null) return projectsRoot;
   try {
-    const info = await (await fetch(`${config.apiUrl}/projects`)).json();
+    const info = await (await config.apiFetch(`${config.apiUrl}/projects`)).json();
     projectsRoot = info.host_root ? path.resolve(info.host_root) : "";
   } catch {
     return "";
@@ -478,7 +478,7 @@ async function lookAtScreen({ question }) {
     if (wasVisible) window.showInactive();
   }
   if (!jpeg || jpeg.length === 0) return { status: "error", error: "Could not capture the screen" };
-  const response = await fetch(`${config.apiUrl}/vision`, {
+  const response = await config.apiFetch(`${config.apiUrl}/vision`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: jpeg.toString("base64"), question: String(question ?? "").slice(0, 300) }),

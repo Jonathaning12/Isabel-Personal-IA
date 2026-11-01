@@ -17,6 +17,9 @@ from pathlib import Path
 
 import httpx
 
+from assistant.api.auth import client_token
+from assistant.config import get_settings
+
 API = "http://127.0.0.1:8000"
 
 
@@ -38,6 +41,7 @@ def main(n: int) -> None:
             r = httpx.post(
                 f"{API}/chat",
                 json={"message": question, "thread_id": f"bench-{uuid.uuid4().hex[:8]}"},
+                headers={"Authorization": f"Bearer {client_token(get_settings())}"},
                 timeout=300,
             )
             r.raise_for_status()

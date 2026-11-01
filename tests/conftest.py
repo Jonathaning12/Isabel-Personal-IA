@@ -20,6 +20,7 @@ def settings() -> Settings:
         embed_dim=3,
         embed_batch_size=2,
         qdrant_url="http://qdrant.test:6333",
+        require_token=False,  # the token itself is tested in test_auth.py
     )
 
 
