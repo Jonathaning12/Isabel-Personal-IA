@@ -106,6 +106,7 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 - Claude as an alternative brain: not decided.
 
 ## Known Issues / Tech Debt
+- Trained wake word (data/wakeword/isabel.onnx, trained 2026-11-01 in Colab as "ee_sah_bel", 10k clips / 20k steps): synthetic tests score 0.93 on an English voice saying "ee sah bel" (separated) but ~0 on fluent Spanish "Isabel" (Piper es_MX, Windows Helena); no false alarms. Real-voice test pending. If it misses the student's voice: delete the file (app falls back to Vosk) or retrain with another spelling. Colab notebook needed 4 fixes (older runtime for py3.11, AudioSet parquet, phonemizer URL dead → custom phones, FP-validation batch OOM → batch_size=8192).
 - If Nebius embeddings are down, the agent answers without notes (and says so) instead of failing.
 - Agent latency is dominated by Nebius embedding latency when the service is loaded (see Verified Facts). No streaming yet.
 - The API container has Docker socket access (needed to start sandboxes). Documented in README/PITCH as a trade-off.
@@ -115,6 +116,7 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 - `OpenShellRunner` is planned as a stub only.
 
 ## Changelog
+- 2026-11-01 · Installed the student's trained wake-word model (data/wakeword/isabel.onnx, not in git); voice service reports it available, app streams to it; synthetic scoring recorded in Known Issues · data/wakeword/ (local only), MEMORY.md
 - 2026-10-31 · Improvement round (all approved items but the Linux server): commits, start with Windows, API token, doctor voice/token checks + docs for the personal project, sentence-by-sentence speech, desktop vitest (28), memory contradictions + reviewed tidy-up, episodes, Google Calendar/Gmail, installer + lazy Vosk, trained wake word (openWakeWord) with Colab guide; 161 unit + 28 desktop tests, doctor all green · see git log abf8757..HEAD
 - 2026-10-31 · Voice: wake word only on confident final results + name check on the transcription (false wake-ups dropped, logged "Ignorado: no dijiste «Isabel»"), 15 s follow-up window after spoken answers; name filter checked on 8 example transcriptions; not tested by voice (PC locked) · desktop/src/voice/{wakeword,recorder}.ts, desktop/src/{useAssistant,App}.tsx, README.md
 - 2026-10-31 · Learning + proactive features: background fact learning (live: 2 facts from one sentence, source=learned), music habits + GET/DELETE /habits, user name in prompt, set_morning_greeting tool + morning scheduler (live: agent set fixed 07:00), repeating reminders with heads-up (live: daily 19:00, heads_up 5), status bar collapses to a click-through strip; 146 unit tests pass · memory/habits.py, memory/facts.py, api/routes/{chat,memory}.py, api/main.py, agent/{graph,prompts,state}.py, tools/registry.py, config.py, tests/unit/test_habits.py, desktop/electron/{main.cjs,preload.cjs,desktop-actions.cjs,statusbar-preload.cjs,statusbar/*}, desktop/src/{App.tsx,api.ts,useAssistant.ts,orb/settings.ts,lib/labels.ts,components/{SettingsPanel,MorningSettings,Sidebar}.tsx}, README.md, .env.example
