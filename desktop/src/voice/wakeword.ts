@@ -13,7 +13,9 @@
 // breath ("Isabel, ¿qué hora es?") is not cut off. The app then checks that the
 // transcription really contains the name (requestAfterName) before doing anything.
 
-import { createModel, type KaldiRecognizer, type Model } from "vosk-browser";
+// Types only: the engine itself (~6 MB of WebAssembly) is loaded on first use, so the app
+// opens fast and never loads it while the microphone is muted.
+import type { KaldiRecognizer, Model } from "vosk-browser";
 
 const WAKE_WORD = "isabel";
 // Approving must be deliberate: only long, distinctive words, recognized with high
@@ -56,10 +58,12 @@ interface Options {
 let modelPromise: Promise<Model> | null = null; // loaded once per app run
 
 function loadModel(url: string): Promise<Model> {
-  modelPromise ??= createModel(url).catch((error) => {
-    modelPromise = null; // a failed load can be retried (toggle the setting off and on)
-    throw error;
-  });
+  modelPromise ??= import("vosk-browser")
+    .then(({ createModel }) => createModel(url))
+    .catch((error) => {
+      modelPromise = null; // a failed load can be retried (toggle the setting off and on)
+      throw error;
+    });
   return modelPromise;
 }
 

@@ -17,6 +17,7 @@ build/
 # Desktop app (Node)
 node_modules/
 desktop/models/
+desktop/release/
 
 # OS / editors
 .DS_Store

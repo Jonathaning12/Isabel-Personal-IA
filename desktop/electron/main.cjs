@@ -33,7 +33,17 @@ const API_URL = (process.env.ASSISTANT_API_URL || "http://127.0.0.1:8000").repla
 // The API's bearer token (src/assistant/api/auth.py): ASSISTANT_API_TOKEN, or the file the
 // API writes in the project's data/ folder on its first start. Read again after a 401
 // (e.g. the token was regenerated).
-const PROJECT_DIR = process.env.ASSISTANT_PROJECT_DIR || path.join(__dirname, "..", "..");
+// The installed app learns the project folder from build/project.json (written at build time).
+function projectDir() {
+  if (process.env.ASSISTANT_PROJECT_DIR) return process.env.ASSISTANT_PROJECT_DIR;
+  if (!app.isPackaged) return path.join(__dirname, "..", "..");
+  try {
+    return JSON.parse(fsSync.readFileSync(path.join(process.resourcesPath, "project.json"), "utf-8")).projectDir;
+  } catch {
+    return "";
+  }
+}
+const PROJECT_DIR = projectDir();
 let cachedToken = null;
 function apiToken(refresh = false) {
   if (cachedToken === null || refresh) {
@@ -58,8 +68,9 @@ const SUPPORTED_DOCS = ["md", "txt", "pdf"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 // The local wake-word model (desktop/models/*.tar.gz) is served over a private scheme:
-// the speech worker runs from a blob: URL and cannot read file:// URLs.
-const MODELS_DIR = path.join(__dirname, "..", "models");
+// the speech worker runs from a blob: URL and cannot read file:// URLs. The installed app
+// carries it next to the app (resources/models).
+const MODELS_DIR = app.isPackaged ? path.join(process.resourcesPath, "models") : path.join(__dirname, "..", "models");
 protocol.registerSchemesAsPrivileged([
   { scheme: "isabel-model", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
@@ -493,6 +504,9 @@ function onStatusBarResize(event, mode) {
 }
 
 app.setAppUserModelId("Isabel"); // so Windows shows the app's notifications (reminders)
+// One data folder for the development run and the installed app (settings, reminders,
+// Spotify/Google sign-ins): the installer must not start from scratch.
+app.setPath("userData", path.join(app.getPath("appData"), "assistant-desktop"));
 
 app.whenReady().then(async () => {
   if (process.argv.includes("--spotify-diagnose")) {

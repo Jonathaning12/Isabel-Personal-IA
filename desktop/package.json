@@ -11,13 +11,8 @@
     "typecheck": "tsc --noEmit",
     "fetch-model": "node scripts/fetch-wake-model.mjs",
     "preview": "vite",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "three": "^0.186.1",
-    "vosk-browser": "^0.0.8"
+    "test": "vitest run",
+    "dist": "npm run build && node scripts/write-project-info.mjs && electron-builder --win"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
@@ -27,9 +22,54 @@
     "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
     "electron": "^45.1.0",
+    "electron-builder": "^26.18.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.186.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5",
+    "vosk-browser": "^0.0.8",
     "wait-on": "^9.5.1"
+  },
+  "build": {
+    "appId": "dev.isabel.assistant",
+    "productName": "Isabel",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "models",
+        "to": "models",
+        "filter": [
+          "*.tar.gz"
+        ]
+      },
+      {
+        "from": "build/project.json",
+        "to": "project.json"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Isabel"
+    }
   }
 }
