@@ -33,18 +33,22 @@ class ChatClient:
         thinking: bool,
         max_tokens: int | None,
         tools: list[dict[str, Any]] | None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "model": self._settings.llm_model,
             "messages": messages,
             "max_tokens": max_tokens or self._settings.max_completion_tokens,
-            "timeout": self._settings.llm_timeout_s,
+            "timeout": timeout or self._settings.llm_timeout_s,
         }
         if self._settings.llm_provider == "nebius":
             params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": thinking}}
         elif not thinking:
             # Lowest thinking level Gemini accepts on every model ("none" is rejected by 3.x).
             params["reasoning_effort"] = "minimal"
+        elif self._settings.llm_reasoning_effort:
+            # Normal answers: enough thinking to pick tools well, without the default delay.
+            params["reasoning_effort"] = self._settings.llm_reasoning_effort
         if tools:
             params["tools"] = tools
         return params
@@ -56,9 +60,12 @@ class ChatClient:
         thinking: bool = True,
         max_tokens: int | None = None,
         tools: list[dict[str, Any]] | None = None,
+        timeout: float | None = None,
     ) -> ChatCompletionMessage:
         """Return the assistant message (content stripped; may contain tool_calls)."""
-        params = self._params(messages, thinking=thinking, max_tokens=max_tokens, tools=tools)
+        params = self._params(
+            messages, thinking=thinking, max_tokens=max_tokens, tools=tools, timeout=timeout
+        )
         start = time.perf_counter()
         response = await call_with_retries(
             lambda: self._client.chat.completions.create(**params), wait=self._wait

@@ -202,6 +202,7 @@ async def local_speech(settings: Settings, text: str) -> bytes | None:
 
 
 MAX_AUDIO_MB = 10
+TRANSCRIBE_TIMEOUT_S = 8.0
 TRANSCRIBE_PROMPT = (
     "Transcribe this audio verbatim, in the language it is spoken. "
     "Return only the transcription, with no comments. If there is no speech, return nothing."
@@ -236,5 +237,8 @@ async def transcribe(request: Request, audio: UploadFile) -> dict[str, str]:
         ],
         thinking=False,
         max_tokens=1000,
+        # Gemini usually answers in ~1.5 s but sometimes hangs for 15+ s: cutting at 8 s
+        # and retrying (call_with_retries) is faster than waiting.
+        timeout=TRANSCRIBE_TIMEOUT_S,
     )
     return {"text": (message.content or "").strip()}

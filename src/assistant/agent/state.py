@@ -20,3 +20,4 @@ class AgentState(TypedDict, total=False):
     project: str | None  # the project folder selected in the app ("esta carpeta")
     user_name: str | None  # the name the user set in the app, if any
     episodes: list[str]  # summaries of related past conversations, with their date
+    thread_summary: str | None  # this conversation's summary (older messages not sent)

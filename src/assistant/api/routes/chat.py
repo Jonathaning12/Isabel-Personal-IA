@@ -7,6 +7,7 @@ POST /chat/{thread_id}/confirm   → approve or reject the pending action, then 
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Literal
 
@@ -68,6 +69,19 @@ async def _pending(request: Request, thread_id: str) -> dict[str, Any] | None:
     return interrupts[0].value if interrupts else None
 
 
+# First-person markers in Spanish: "soy", "me gusta", "trabajo en", "mi hermana"…
+# Requests like "pon música" or "¿qué hora es?" hold no facts and skip the extra call.
+PERSONAL = re.compile(
+    r"\b(yo|soy|estoy|tengo|vivo|trabajo|estudio|prefiero|odio|uso|me\s+(gusta|gustan|encanta|llamo|"
+    r"dedico|interesa)|mis?|nac[ií]|cumplo|mi\s+\w+\s+(es|se))\b",
+    re.IGNORECASE,
+)
+
+
+def talks_about_user(message: str) -> bool:
+    return len(message) >= MIN_LEARN_CHARS and bool(PERSONAL.search(message))
+
+
 async def learn_quietly(request: Request, message: str) -> None:
     """Background learning: durable facts the user mentions in passing ("trabajo en…",
     "soy vegetariano"). Only the user's own words are used, never documents or tool
@@ -102,7 +116,7 @@ async def chat(request: Request, body: ChatRequest, background: BackgroundTasks)
     }
     result = await request.app.state.graph.ainvoke(turn, _config(thread_id))
     settings = request.app.state.settings
-    if settings.auto_learn and not body.automatic and len(body.message) >= MIN_LEARN_CHARS:
+    if settings.auto_learn and not body.automatic and talks_about_user(body.message):
         background.add_task(learn_quietly, request, body.message)
     if due_for_summary(result.get("messages", [])):
         background.add_task(summarize_quietly, request, thread_id, result["messages"])

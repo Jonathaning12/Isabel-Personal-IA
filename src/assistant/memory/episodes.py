@@ -108,6 +108,13 @@ class EpisodeMemory:
             f"({p.payload['ended_at'][:10]}) {p.payload['summary']}" for p in points if p.payload
         ]
 
+    async def own(self, thread_id: str) -> str | None:
+        """This conversation's summary, used when its older messages are not sent."""
+        found = await self._store.client.retrieve(
+            self._store.episodes, ids=[episode_id(thread_id)], with_payload=True
+        )
+        return (found[0].payload or {}).get("summary") if found else None
+
     async def list(self) -> list[dict[str, Any]]:
         return await self._store.list_episodes()
 

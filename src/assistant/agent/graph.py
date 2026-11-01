@@ -37,6 +37,7 @@ from assistant.agent.prompts import (
     NOTES_UNAVAILABLE,
     PREVIOUS_SOURCES_BLOCK,
     SKILLS_BLOCK,
+    THREAD_SUMMARY_BLOCK,
 )
 from assistant.agent.rag import format_context, normalize_citations
 from assistant.agent.state import AgentState
@@ -87,11 +88,15 @@ def build_system_prompt(
     habits: list[str] | None = None,
     user_name: str | None = None,
     episodes: list[str] | None = None,
+    thread_summary: str | None = None,
 ) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
     habits_block = HABITS_BLOCK.format(habits="\n".join(f"- {h}" for h in habits)) if habits else ""
     episodes_block = (
         EPISODES_BLOCK.format(episodes="\n".join(f"- {e}" for e in episodes)) if episodes else ""
+    )
+    thread_summary_block = (
+        THREAD_SUMMARY_BLOCK.format(summary=thread_summary) if thread_summary else ""
     )
     user_block = (
         f"The user's name is {user_name}. Use it now and then (greetings, reminders), not "
@@ -130,11 +135,41 @@ def build_system_prompt(
         facts_block=facts_block,
         habits_block=habits_block,
         episodes_block=episodes_block,
+        thread_summary_block=thread_summary_block,
         user_block=user_block,
         skills_block=skills_block,
         previous_sources_block=sources_block,
         context_block=context_block,
     )
+
+
+OLD_TOOL_RESULT_CHARS = 400  # tool output from earlier turns, enough to recall it
+
+
+def recent_messages(
+    messages: list[dict[str, Any]], max_turns: int
+) -> tuple[list[dict[str, Any]], bool]:
+    """The last `max_turns` user turns (whole turns, so tool calls keep their results),
+    with tool output from earlier turns shortened. Returns (messages, trimmed?).
+
+    Long conversations used to send every message ever said (24k tokens, 15 s per
+    answer); older turns are covered by the conversation summary instead."""
+    users = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    trimmed = len(users) > max_turns
+    window = messages[users[-max_turns] :] if trimmed else messages
+    current = max((i for i, m in enumerate(window) if m.get("role") == "user"), default=0)
+    shortened = []
+    for i, message in enumerate(window):
+        content = message.get("content")
+        if (
+            i < current
+            and message.get("role") == "tool"
+            and isinstance(content, str)
+            and len(content) > OLD_TOOL_RESULT_CHARS
+        ):
+            message = {**message, "content": content[:OLD_TOOL_RESULT_CHARS] + "…"}
+        shortened.append(message)
+    return shortened, trimmed
 
 
 def cited_sources(answer: str, context: list[dict[str, Any]]) -> list[str]:
@@ -225,16 +260,20 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             logger.warning("load_context_failed error=%s", type(exc).__name__)
             citations, facts, unavailable, vector = [], [], True, None
         episodes: list[str] = []
+        thread_summary = None
         if deps.episodes is not None and vector is not None:
             thread_id = config.get("configurable", {}).get("thread_id")
             try:
                 episodes = await deps.episodes.relevant(vector, thread_id)
+                if thread_id:
+                    thread_summary = await deps.episodes.own(thread_id)
             except Exception as exc:  # past conversations are a bonus, never a blocker
                 logger.warning("episodes_failed error=%s", type(exc).__name__)
         return {
             "context": citations,
             "facts": facts,
             "episodes": episodes,
+            "thread_summary": thread_summary,
             "actions": [],
             "iterations": 0,
             "notes_unavailable": unavailable,
@@ -244,6 +283,7 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
     async def agent(state: AgentState) -> dict[str, Any]:
         # Loop guard: after too many round trips, force a final answer without tools.
         allow_tools = state["iterations"] < deps.settings.max_agent_iterations
+        history, trimmed = recent_messages(state["messages"], deps.settings.history_turns)
         system = build_system_prompt(
             state["facts"],
             state["context"],
@@ -256,9 +296,10 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             habits=deps.habits.describe() if deps.habits else None,
             user_name=state.get("user_name"),
             episodes=state.get("episodes"),
+            thread_summary=state.get("thread_summary") if trimmed else None,
         )
         reply = await deps.chat.complete(
-            [{"role": "system", "content": system}, *state["messages"]],
+            [{"role": "system", "content": system}, *history],
             tools=tool_specs if allow_tools else None,
             thinking=True,
         )

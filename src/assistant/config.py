@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     fact_related_threshold: float = 0.6
     # Past-conversation summaries at least this similar to the message go into the prompt.
     episode_min_score: float = 0.45
+    # Only the last N user turns go to the model in full; older ones are covered by the
+    # conversation's summary (episode). Keeps every request small and fast.
+    history_turns: int = 6
+    # Gemini thinking level for normal answers (low | medium | high); helpers use minimal.
+    llm_reasoning_effort: str = "medium"  # "low" was faster but slipped on date math
     # Learn facts the user mentions in passing (one extra cheap LLM call per message).
     auto_learn: bool = True
 

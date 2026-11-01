@@ -12,6 +12,8 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 6. Still open: Claude as an alternative brain.
 
 ## Decisions
+- 2026-11-01 · Speed: only the last HISTORY_TURNS=6 user turns go to the model (older tool output cut to 400 chars, the thread's own episode summary replaces the rest); transcription timeout 8 s + retry; background learning only for first-person messages; Gemini reasoning_effort=medium for answers · the real thread (149 turns) sent ~23k history tokens → 12–17 s per answer; now ~0.7k (prompt ~8.2k) → 1.5–2.7 s end to end · `low` effort tested: no faster on average and slipped on date math (54 vs 55 days), so medium is the default.
+- 2026-11-01 · Trained wake word disabled (data/wakeword/isabel.onnx.disabled): it missed the student's natural "Isabel"; app back on Vosk + name check.
 - 2026-10-31 · API bearer token generated into data/api_token when API_TOKEN is empty; REQUIRE_TOKEN=false only in unit tests · any local program could call the API · a token typed by the user (friction).
 - 2026-10-31 · Sentence-by-sentence TTS only when Piper speaks (GET /voice/status says Gemini is paused) · splitting Gemini requests would burn the free quota 2–3× faster · always split.
 - 2026-10-31 · Memory hygiene: contradiction check against facts with cosine 0.6–0.9 (model lists ids to delete, unknown ids ignored); tidy-up is propose → user reviews → apply the same plan (stale ids skipped) · automatic deletion only for facts the user's own new words contradict · automatic periodic consolidation (deletes data without review).
@@ -116,6 +118,7 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 - `OpenShellRunner` is planned as a stub only.
 
 ## Changelog
+- 2026-11-01 · Faster answers: recent-history window + thread summary, transcription timeout, personal-only learning, reasoning_effort setting, stronger "no sandbox for date math" rule; live: 8/8 correct, 1.5–2.7 s per answer (was 12–17 s for the model call alone); 166 unit tests · agent/{graph,prompts,state}.py, llm/chat.py, api/routes/{chat,voice}.py, memory/episodes.py, config.py, tests/unit/test_speed.py, .env.example
 - 2026-11-01 · Installed the student's trained wake-word model (data/wakeword/isabel.onnx, not in git); voice service reports it available, app streams to it; synthetic scoring recorded in Known Issues · data/wakeword/ (local only), MEMORY.md
 - 2026-10-31 · Improvement round (all approved items but the Linux server): commits, start with Windows, API token, doctor voice/token checks + docs for the personal project, sentence-by-sentence speech, desktop vitest (28), memory contradictions + reviewed tidy-up, episodes, Google Calendar/Gmail, installer + lazy Vosk, trained wake word (openWakeWord) with Colab guide; 161 unit + 28 desktop tests, doctor all green · see git log abf8757..HEAD
 - 2026-10-31 · Voice: wake word only on confident final results + name check on the transcription (false wake-ups dropped, logged "Ignorado: no dijiste «Isabel»"), 15 s follow-up window after spoken answers; name filter checked on 8 example transcriptions; not tested by voice (PC locked) · desktop/src/voice/{wakeword,recorder}.ts, desktop/src/{useAssistant,App}.tsx, README.md
