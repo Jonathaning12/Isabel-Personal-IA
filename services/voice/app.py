@@ -1,11 +1,14 @@
-"""Local voice service: text to speech with Piper, on the CPU.
+"""Local voice service: text to speech with Piper, and the trained wake word, on the CPU.
 
-It runs in its own container with no published port: only the API reaches it, at
-http://voice:8100. The voice model is inside the image, so the text never leaves the
-machine and there is no quota. The API uses it when the chosen Gemini voice is
-unavailable (free-tier quota exhausted, provider busy, or no Gemini at all).
+It runs in its own container; the API reaches it at http://voice:8100 and the desktop app
+at 127.0.0.1:8100 (published on this machine only). The models are inside the image (or
+in data/wakeword/), so no text or audio leaves the machine and there is no quota. The API
+uses the voice when the chosen Gemini voice is unavailable (free-tier quota exhausted,
+provider busy, or no Gemini at all).
 
-POST /tts  {"text": ..., "speed"?: ...}  -> audio/wav
+POST /tts          {"text": ..., "speed"?: ...}  -> audio/wav
+GET  /wake/status  is a trained wake-word model installed?
+WS   /wake         16 kHz 16-bit mono audio in, {"detected": true} out (see wake.py)
 GET  /health
 """
 
@@ -15,7 +18,8 @@ import threading
 import wave
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Response
+import wake
+from fastapi import FastAPI, HTTPException, Response, WebSocket
 from piper import PiperVoice, SynthesisConfig
 from pydantic import BaseModel, Field
 
@@ -59,3 +63,13 @@ def tts(body: TtsRequest) -> Response:
     with busy, wave.open(buffer, "wb") as out:
         voice.synthesize_wav(body.text, out, syn_config=config)
     return Response(content=buffer.getvalue(), media_type="audio/wav")
+
+
+@app.get("/wake/status")
+def wake_status() -> dict:
+    return wake.status()
+
+
+@app.websocket("/wake")
+async def wake_stream(websocket: WebSocket) -> None:
+    await wake.stream(websocket)

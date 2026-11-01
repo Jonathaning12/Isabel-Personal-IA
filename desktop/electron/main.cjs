@@ -82,6 +82,49 @@ function serveModel(request) {
   return net.fetch(pathToFileURL(path.join(MODELS_DIR, name)).toString());
 }
 
+// ---- Trained wake word -------------------------------------------------------------------
+// With a trained model (data/wakeword/isabel.onnx) the voice service detects "Isabel" with
+// openWakeWord: the page sends 16 kHz audio here while it waits for the name, and this
+// process forwards it over a local WebSocket (127.0.0.1 only) and reports detections back.
+const VOICE_URL = (process.env.ASSISTANT_VOICE_URL || "http://127.0.0.1:8100").replace(/\/$/, "");
+let wakeSocket = null;
+let wakeRetryAt = 0;
+
+async function wakeEngine(event) {
+  if (!trustedSender(event)) return null;
+  try {
+    const response = await fetch(`${VOICE_URL}/wake/status`, { signal: AbortSignal.timeout(3000) });
+    return await response.json();
+  } catch {
+    return { available: false };
+  }
+}
+
+function openWakeSocket() {
+  wakeRetryAt = Date.now() + 5000; // at most one reconnection attempt every 5 s
+  const socket = new WebSocket(`${VOICE_URL.replace(/^http/, "ws")}/wake`);
+  socket.binaryType = "arraybuffer";
+  socket.onmessage = (message) => {
+    try {
+      const data = JSON.parse(String(message.data));
+      if (data.detected) mainWindow?.webContents.send("wake:detected", data.score);
+    } catch {
+      // not JSON: ignore
+    }
+  };
+  socket.onclose = () => {
+    if (wakeSocket === socket) wakeSocket = null;
+  };
+  socket.onerror = () => undefined; // onclose follows; the next chunk reconnects
+  wakeSocket = socket;
+}
+
+function wakeAudio(event, chunk) {
+  if (!trustedSender(event) || !(chunk instanceof Uint8Array) || chunk.byteLength > 64_000) return;
+  if (!wakeSocket && Date.now() >= wakeRetryAt) openWakeSocket();
+  if (wakeSocket?.readyState === WebSocket.OPEN) wakeSocket.send(chunk);
+}
+
 function modelInfo(event) {
   if (!trustedSender(event)) return null;
   const file = fsSync.existsSync(MODELS_DIR) ? fsSync.readdirSync(MODELS_DIR).find((f) => f.endsWith(".tar.gz")) : undefined;
@@ -553,6 +596,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:save", saveSettings);
   protocol.handle("isabel-model", serveModel);
   ipcMain.handle("wake:model", modelInfo);
+  ipcMain.handle("wake:engine", wakeEngine);
+  ipcMain.on("wake:audio", wakeAudio);
   ipcMain.handle("obsidian:open", openInObsidian);
   // Actions on this computer (music, Spotify) requested by the agent.
   ipcMain.handle("computer:run", async (event, { tool, args, threadId, toolCallId }) => {

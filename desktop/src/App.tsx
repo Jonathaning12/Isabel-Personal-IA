@@ -54,7 +54,7 @@ export function App() {
   // finished reading it aloud); nothing while she records, thinks or speaks.
   const wakeIdle = (assistant.phase === "idle" || assistant.phase === "error") && !assistant.pending;
   const listenMode = assistant.pending && !assistant.askingAloud ? "confirm" : wakeIdle ? "wake" : "off";
-  const wakeStatus = useWakeWord(loaded && settings.wakeWord, listenMode, {
+  const { status: wakeStatus, engine: wakeEngine } = useWakeWord(loaded && settings.wakeWord, listenMode, {
     onWake: (preroll) => {
       setPulseKey((k) => k + 1); // the orb reacts to her name
       assistant.wake(preroll);
@@ -314,6 +314,7 @@ export function App() {
         settings={settings}
         activeMaterial={windowInfo?.material ?? null}
         wakeStatus={wakeStatus}
+        wakeEngine={wakeEngine}
         preview={preview}
         onChange={update}
         onPreview={setPreview}

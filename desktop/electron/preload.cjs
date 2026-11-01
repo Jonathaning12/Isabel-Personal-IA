@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld("assistant", {
   saveSettings: (settings) => ipcRenderer.invoke("settings:save", settings),
   windowInfo: () => ipcRenderer.invoke("window:info"),
   wakeModel: () => ipcRenderer.invoke("wake:model"),
+  // Trained wake word (openWakeWord in the voice service): status, audio out, detections in.
+  wakeEngine: () => ipcRenderer.invoke("wake:engine"),
+  wakeAudio: (bytes) => ipcRenderer.send("wake:audio", bytes),
+  onWakeDetected: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("wake:detected", listener);
+    return () => ipcRenderer.removeListener("wake:detected", listener);
+  },
   openInObsidian: (vault, file) => ipcRenderer.invoke("obsidian:open", { vault, file }),
   runAction: (tool, args, threadId, toolCallId) =>
     ipcRenderer.invoke("computer:run", { tool, args, threadId, toolCallId }),

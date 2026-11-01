@@ -24,14 +24,21 @@ services:
     command: ["python", "-c", "print('sandbox image ready')"]
     network_mode: none
 
-  # Local voice (Piper text to speech), used when the Gemini voice is out of quota. No
-  # published port and no internet at runtime: only the API talks to it.
+  # Local voice (Piper text to speech, used when the Gemini voice is out of quota) and the
+  # trained wake word. Published on 127.0.0.1 only; no internet at runtime.
   voice:
     build:
       context: services/voice
     image: assistant-voice:latest
+    ports:
+      # This machine only: the desktop app streams the mic here for the trained wake word.
+      - "127.0.0.1:8100:8100"
+    volumes:
+      # Your trained wake-word model (data/wakeword/isabel.onnx), if you made one.
+      - ./data/wakeword:/wakeword:ro
     environment:
       LOCAL_TTS_SPEED: ${LOCAL_TTS_SPEED:-1.0}
+      WAKEWORD_THRESHOLD: ${WAKEWORD_THRESHOLD:-0.5}
     healthcheck:
       test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8100/health'))['status'] == 'ok'"]
       interval: 10s

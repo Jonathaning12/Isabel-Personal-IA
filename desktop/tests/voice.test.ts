@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("vosk-browser", () => ({ createModel: vi.fn() })); // the WebAssembly engine is not needed here
 
-const { decisionFromWords, requestAfterName, stripWakeWord } = await import("../src/voice/wakeword");
+const { decisionFromWords, makeResampler, requestAfterName, stripWakeWord } = await import("../src/voice/wakeword");
 const { splitForSpeech, speakableText } = await import("../src/voice/speech");
 
 describe("requestAfterName", () => {
@@ -58,5 +58,19 @@ describe("splitForSpeech", () => {
 
   it("speakableText drops citations and Markdown", () => {
     expect(speakableText("**Hola** [1], esto es `código`.")).toBe("Hola , esto es código.");
+  });
+});
+
+describe("makeResampler", () => {
+  it("turns 48 kHz float audio into 16 kHz int16, chunk after chunk", () => {
+    const resample = makeResampler(48000);
+    const second = new Float32Array(48000).fill(0.5);
+    const out = [...resample(second.subarray(0, 4096)), ...resample(second.subarray(4096))];
+    expect(out.length).toBe(16000);
+    expect(out.every((s) => s === Math.round(0.5 * 32767))).toBe(true);
+  });
+
+  it("clips out-of-range samples", () => {
+    expect([...makeResampler(16000)(new Float32Array([2, -2]))]).toEqual([32767, -32767]);
   });
 });

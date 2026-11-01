@@ -48,8 +48,16 @@ export interface WakeListener {
   stop(): void;
 }
 
+/** The trained detector (openWakeWord in the voice service), when a model is installed. */
+export interface TrainedDetector {
+  send(audio16k: Uint8Array): void;
+  onDetected(callback: () => void): () => void;
+}
+
 interface Options {
   modelUrl: string;
+  /** If set, "Isabel" is detected by the trained model; Vosk then only does approvals. */
+  trained?: TrainedDetector;
   onWake: () => void;
   onConfirm: (decision: "approve" | "reject") => void;
   onStatus: (status: WakeStatus) => void;
@@ -81,7 +89,7 @@ export function decisionFromWords(heard: HeardWord[]): "approve" | "reject" | nu
   return null;
 }
 
-export async function startWakeListener({ modelUrl, onWake, onConfirm, onStatus }: Options): Promise<WakeListener> {
+export async function startWakeListener({ modelUrl, trained, onWake, onConfirm, onStatus }: Options): Promise<WakeListener> {
   onStatus("loading");
   const model = await loadModel(modelUrl);
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -90,7 +98,7 @@ export async function startWakeListener({ modelUrl, onWake, onConfirm, onStatus 
   let context: AudioContext | null = null;
   try {
     context = new AudioContext();
-    return build(model, stream, context, { onWake, onConfirm, onStatus });
+    return build(model, stream, context, { trained, onWake, onConfirm, onStatus });
   } catch (error) {
     // Never leave the microphone open if anything after getUserMedia fails.
     stream.getTracks().forEach((track) => track.stop());
@@ -103,7 +111,7 @@ function build(
   model: Model,
   stream: MediaStream,
   context: AudioContext,
-  { onWake, onConfirm, onStatus }: Omit<Options, "modelUrl">,
+  { trained, onWake, onConfirm, onStatus }: Omit<Options, "modelUrl">,
 ): WakeListener {
   const rate = context.sampleRate;
   const wake = new model.KaldiRecognizer(rate, JSON.stringify([WAKE_WORD, "[unk]"]));
@@ -130,17 +138,23 @@ function build(
     ignoreUntil = performance.now() + RESUME_GRACE_MS;
   };
 
+  const woke = () => {
+    const now = performance.now();
+    if (mode !== "wake" || now < ignoreUntil || now - lastWake < COOLDOWN_MS) return;
+    lastWake = now;
+    setMode("off"); // the app sets the next mode once it is idle again
+    onWake();
+  };
+  const stopTrained = trained?.onDetected(woke);
+  const toTrained = trained ? makeResampler(rate) : null;
+
   wake.on("result", (m) => {
-    if (mode !== "wake") return;
+    if (mode !== "wake" || trained) return;
     const words = (m as { result?: { result?: HeardWord[] } }).result?.result ?? [];
     const name = words.find((w) => w.word === WAKE_WORD);
     if (!name) return;
     console.info(`wake word candidate: ${words.map((w) => `${w.word}(${w.conf.toFixed(2)})`).join(" ")}`);
-    const now = performance.now();
-    if (name.conf < MIN_WAKE_CONFIDENCE || now < ignoreUntil || now - lastWake < COOLDOWN_MS) return;
-    lastWake = now;
-    setMode("off"); // the app sets the next mode once it is idle again
-    onWake();
+    if (name.conf >= MIN_WAKE_CONFIDENCE) woke();
   });
 
   // Approvals only count on a complete utterance ("result"), never on a partial guess.
@@ -161,6 +175,11 @@ function build(
       ring[ringPos] = input[i];
       ringPos = (ringPos + 1) % ring.length;
     }
+    if (mode === "wake" && trained && toTrained) {
+      // The trained model listens for the name; the audio goes only to the local service.
+      trained.send(new Uint8Array(toTrained(input).buffer));
+      return;
+    }
     recognizerFor(mode)?.acceptWaveformFloat(new Float32Array(input), rate);
   };
   source.connect(processor);
@@ -176,6 +195,7 @@ function build(
       return { samples: out, rate };
     },
     stop() {
+      stopTrained?.();
       processor.disconnect();
       source.disconnect();
       stream.getTracks().forEach((track) => track.stop());
@@ -183,6 +203,32 @@ function build(
       confirm.remove();
       void context.close();
     },
+  };
+}
+
+/** Microphone audio (any rate, float) → 16 kHz 16-bit PCM, block-averaged so higher
+ * frequencies do not fold into the speech band. Keeps its position across chunks. */
+export function makeResampler(fromRate: number, toRate = 16000): (input: Float32Array) => Int16Array {
+  const step = fromRate / toRate;
+  let carry = new Float32Array(0); // samples of a block that continues in the next chunk
+  let pos = 0; // fractional start of the next block, within carry + input
+  return (chunk) => {
+    const input = new Float32Array(carry.length + chunk.length);
+    input.set(carry);
+    input.set(chunk, carry.length);
+    const out = new Int16Array(Math.ceil(input.length / step) + 1);
+    let n = 0;
+    for (; pos + step <= input.length + 1e-9; pos += step) {
+      const start = Math.floor(pos);
+      const end = Math.max(start + 1, Math.min(input.length, Math.floor(pos + step)));
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += input[i];
+      out[n++] = Math.round(Math.max(-1, Math.min(1, sum / (end - start))) * 32767);
+    }
+    const keep = Math.floor(pos);
+    carry = input.slice(keep);
+    pos -= keep;
+    return out.slice(0, n);
   };
 }
 

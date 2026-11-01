@@ -6,14 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { type ListenMode, type Preroll, startWakeListener, type WakeListener, type WakeStatus } from "./wakeword";
 
 export type WakeState = WakeStatus | "off";
+/** Which detector listens for "Isabel": the trained model, or Vosk's two-word grammar. */
+export type WakeEngine = "trained" | "basic";
 
 interface Handlers {
   onWake: (preroll: Preroll) => void;
   onConfirm: (decision: "approve" | "reject") => void;
 }
 
-export function useWakeWord(enabled: boolean, mode: ListenMode, handlers: Handlers): WakeState {
+export function useWakeWord(enabled: boolean, mode: ListenMode, handlers: Handlers): { status: WakeState; engine: WakeEngine } {
   const [status, setStatus] = useState<WakeState>("off");
+  const [engine, setEngine] = useState<WakeEngine>("basic");
   const listener = useRef<WakeListener | null>(null);
   const callbacks = useRef(handlers);
   callbacks.current = handlers;
@@ -29,7 +32,9 @@ export function useWakeWord(enabled: boolean, mode: ListenMode, handlers: Handle
     let cancelled = false;
     void (async () => {
       const model = await bridge.wakeModel();
+      const trainedReady = (await bridge.wakeEngine().catch(() => null))?.available === true;
       if (cancelled) return;
+      setEngine(trainedReady ? "trained" : "basic");
       if (!model) {
         setStatus("unavailable");
         return;
@@ -37,6 +42,7 @@ export function useWakeWord(enabled: boolean, mode: ListenMode, handlers: Handle
       try {
         const started = await startWakeListener({
           modelUrl: model.url,
+          trained: trainedReady ? { send: bridge.wakeAudio, onDetected: bridge.onWakeDetected } : undefined,
           onStatus: (s) => {
             console.info(`wake word: ${s}`);
             if (!cancelled) setStatus(s);
@@ -79,5 +85,5 @@ export function useWakeWord(enabled: boolean, mode: ListenMode, handlers: Handle
     listener.current?.setMode(mode);
   }, [mode, status]);
 
-  return status;
+  return { status, engine };
 }

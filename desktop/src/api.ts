@@ -133,6 +133,9 @@ interface Bridge {
   windowInfo(): Promise<{ customControls: boolean; material: "glass" | "acrylic" } | null>;
   windowControl(action: "minimize" | "maximize" | "close"): Promise<boolean>;
   wakeModel(): Promise<{ url: string } | null>;
+  wakeEngine(): Promise<{ available: boolean; model?: string | null } | null>;
+  wakeAudio(bytes: Uint8Array): void;
+  onWakeDetected(callback: () => void): () => void;
   openInObsidian(vault: string, file: string): Promise<boolean>;
   runAction(
     tool: string,

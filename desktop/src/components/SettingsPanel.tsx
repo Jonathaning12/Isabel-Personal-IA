@@ -5,7 +5,7 @@ import { type AppSettings, DEFAULT_ORB, NATURAL_VOICES, type OrbSettings, PRESET
 import { SHAPES } from "../orb/shapes";
 import { saveSettings } from "../lib/storage";
 import { loadVoices, playSpeech } from "../voice/speech";
-import type { WakeState } from "../voice/useWakeWord";
+import type { WakeEngine, WakeState } from "../voice/useWakeWord";
 import { CloseIcon } from "./Icons";
 import { GoogleSettings } from "./GoogleSettings";
 import { MorningSettings } from "./MorningSettings";
@@ -16,6 +16,7 @@ interface Props {
   /** Material the window is currently using (null outside Electron). */
   activeMaterial: "glass" | "acrylic" | null;
   wakeStatus: WakeState;
+  wakeEngine: WakeEngine;
   preview: OrbState | null;
   onChange: (settings: AppSettings) => void;
   onPreview: (state: OrbState | null) => void;
@@ -67,7 +68,7 @@ const REACTIONS: { key: NumberKey; label: string }[] = [
 ];
 
 /** Right-hand drawer to customize every part of the orb, plus voice preferences. */
-export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, preview, onChange, onPreview, onClose }: Props) {
+export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, wakeEngine, preview, onChange, onPreview, onClose }: Props) {
   const orb = settings.orb;
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   useEffect(() => {
@@ -233,6 +234,13 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
             <span>Activar diciendo «Isabel»</span>
           </label>
           <p className="hint">{WAKE_HINTS[wakeStatus]}</p>
+          {wakeStatus === "ready" ? (
+            <p className="hint">
+              {wakeEngine === "trained"
+                ? "Detector de «Isabel»: modelo entrenado (openWakeWord), el más preciso."
+                : "Detector de «Isabel»: básico (Vosk). Para uno más preciso, entrena tu modelo: services/voice/TRAINING.md."}
+            </p>
+          ) : null}
           <label className="toggle">
             <input type="checkbox" checked={settings.voiceReplies} onChange={(e) => onChange({ ...settings, voiceReplies: e.target.checked })} />
             <span>Responder en voz alta</span>
