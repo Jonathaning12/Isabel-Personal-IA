@@ -95,8 +95,8 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 - 2026-10-28 · Nemotron 3 Super is a reasoning model: thinking tokens count against `max_tokens` (max_tokens=10 → content=None). Disable with `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` (faster, ~3 tokens for 'hola'). Content may start with '\n\n' when thinking is on → strip it. Decide per call: thinking ON for agent reasoning, OFF for cheap tasks (routing, fact extraction).
 
 ## Open Questions
-- (none blocking) Repo: https://github.com/javierrpdev/ai-personal-Assistant — private until submission.
-- Is a GitHub Release (test build) acceptable as the required demo URL, or is a hosted app needed? (SUBMISSION.md §3)
+- Linux / always-on home server for the backend: approved for the END of the project (after the current list).
+- Claude as an alternative brain: not decided.
 
 ## Known Issues / Tech Debt
 - If Nebius embeddings are down, the agent answers without notes (and says so) instead of failing.

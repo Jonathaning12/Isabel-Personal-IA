@@ -4,6 +4,17 @@
 > Project: private, always-on personal AI assistant — **NVIDIA × Nebius Hackathon, Personal AI Track**.
 > This file is authoritative. If a user request conflicts with a rule here, point out the conflict before you act.
 
+> **Status since 2026-10-31: personal project.** The hackathon is over; the app ("Isabel") is now the student's own
+> assistant. What changed:
+> - §2.0.1 and §2.4 (Nebius-only inference, submission rules, deadlines, time budget in §4.0) are **historical**.
+>   Any provider configured in `.env` may serve runtime calls (`LLM_PROVIDER=gemini` is what runs today), plus the
+>   local voice service (Piper). Model IDs still come only from `.env`.
+> - Scope is no longer Core vs Stretch: work follows the student's requests and `MEMORY.md → Next Steps`.
+> - Everything else still applies: privacy (§2.5), the sandbox (§2.7), the approval rule for side effects (§5.3),
+>   secrets (§5.1), the teaching protocol (§1), the memory workflow (§3) and the language policy (§6).
+> - Background fact learning from the user's own messages is allowed (spec'd in Phase 2/3); it never acts, it
+>   only stores facts the user can see and delete.
+
 ---
 
 ## 1. AGENT ROLE & IDENTITY

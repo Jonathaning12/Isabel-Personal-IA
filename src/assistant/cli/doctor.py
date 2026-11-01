@@ -1,8 +1,9 @@
 """`assistant doctor`: check that everything needed to run the assistant is in place.
 
 Runs on the user's machine (reads the local .env) and checks, in order:
-.env and API key → Nebius catalog → embedding dimension → Qdrant → Docker and
-sandbox image → the API. Each failed check prints how to fix it.
+.env and API key → provider catalog → embedding dimension → Qdrant → Docker and
+sandbox image → the API → its token → the voices (Gemini quota, local Piper).
+Each failed check prints how to fix it.
 """
 
 from collections.abc import Callable
@@ -13,6 +14,7 @@ from openai import OpenAI
 from rich.console import Console
 from rich.table import Table
 
+from assistant.api.auth import client_token
 from assistant.config import Settings
 from assistant.memory.store import DOCUMENTS, USER_FACTS
 
@@ -94,7 +96,41 @@ def _api(settings: Settings) -> Check:
     health = httpx.get(f"{settings.api_url}/health", timeout=15).json()
     if health.get("status") != "ok":
         return (False, f"Estado: {health}", "docker compose logs api")
-    return (True, f"{settings.api_url} · nebius ok · qdrant ok", "")
+    return (True, f"{settings.api_url} · {settings.llm_provider} ok · qdrant ok", "")
+
+
+def _auth(settings: Settings) -> dict[str, str]:
+    return {"Authorization": f"Bearer {client_token(settings)}"}
+
+
+def _token(settings: Settings) -> Check:
+    reply = httpx.get(f"{settings.api_url}/habits", headers=_auth(settings), timeout=10)
+    if reply.status_code == 401:
+        return (False, "La API rechaza el token", "Revisa API_TOKEN en .env o data/api_token")
+    reply.raise_for_status()
+    source = "API_TOKEN (.env)" if settings.api_token.get_secret_value() else "data/api_token"
+    return (True, f"Aceptado · {source}", "")
+
+
+def _voice(settings: Settings) -> Check:
+    status = httpx.get(f"{settings.api_url}/voice/status", headers=_auth(settings), timeout=10)
+    status.raise_for_status()
+    data = status.json()
+    gemini = data.get("gemini", {})
+    free = [m for m, s in gemini.items() if not s["paused_s"]]
+    local = data.get("local")
+    local_text = {"ok": "Piper listo", "off": "sin voz local"}.get(local, f"Piper: {local}")
+    if free:
+        return (True, f"Gemini disponible ({settings.tts_voice}) · {local_text}", "")
+    if local == "ok":
+        wait = min((s["paused_s"] for s in gemini.values()), default=0)
+        detail = f"Cuota de Gemini agotada (vuelve en ~{wait // 60} min) · habla Piper"
+        return (True, detail if gemini else "Habla Piper (voz local)", "")
+    return (
+        False,
+        f"Sin voz natural · {local_text}",
+        "docker compose up -d voice (o activa la facturación de Gemini)",
+    )
 
 
 def run_doctor(console: Console) -> bool:
@@ -117,6 +153,8 @@ def run_doctor(console: Console) -> bool:
             ("Qdrant", _qdrant, "docker compose up -d qdrant"),
             ("Docker y sandbox", _sandbox, "Abre Docker Desktop"),
             ("API", _api, "docker compose up -d"),
+            ("Token de la API", _token, "docker compose restart api"),
+            ("Voz", _voice, "docker compose up -d voice"),
         ]
         with console.status("Comprobando…"):
             for label, check, fix in checks:

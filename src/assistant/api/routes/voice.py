@@ -25,6 +25,7 @@ import re
 import time
 import wave
 from pathlib import Path
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, UploadFile
@@ -77,6 +78,29 @@ def save_clip(path: Path, audio: bytes) -> None:
     clips = sorted(path.parent.glob("*.wav"), key=lambda p: p.stat().st_mtime)
     for old in clips[:-MAX_CACHED_CLIPS]:
         old.unlink(missing_ok=True)
+
+
+@router.get("/voice/status")
+async def voice_status(request: Request) -> dict[str, Any]:
+    """Which voices can speak right now, without spending any quota: Gemini models paused
+    after a 429 (and for how long), and whether the local Piper service answers."""
+    settings = request.app.state.settings
+    paused: dict[str, float] = getattr(request.app.state, "tts_paused", {})
+    now = time.monotonic()
+    gemini = {
+        model: {"paused_s": max(0, round(paused.get(model, 0.0) - now))}
+        for model in (settings.tts_model, settings.tts_fallback_model)
+        if model and settings.llm_provider == "gemini"
+    }
+    local = "off"
+    if settings.local_voice_url:
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                reply = await client.get(f"{settings.local_voice_url}/health")
+            local = reply.json().get("status", "error")
+        except (httpx.HTTPError, ValueError):
+            local = "unreachable"
+    return {"gemini": gemini, "local": local}
 
 
 @router.post("/speak")
