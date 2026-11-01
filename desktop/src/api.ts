@@ -158,6 +158,9 @@ interface Bridge {
   spotifyStatus(): Promise<{ connected: boolean; clientId: string } | null>;
   spotifyConnect(clientId: string): Promise<{ ok: boolean; error?: string }>;
   spotifyDisconnect(): Promise<{ ok: boolean }>;
+  googleStatus(): Promise<{ connected: boolean; clientId: string } | null>;
+  googleConnect(clientId: string, clientSecret: string): Promise<{ ok: boolean; error?: string }>;
+  googleDisconnect(): Promise<{ ok: boolean }>;
   relaunch(): Promise<boolean>;
 }
 

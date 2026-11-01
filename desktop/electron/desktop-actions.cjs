@@ -13,6 +13,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const google = require("./google.cjs");
 const { fireTime, nextOccurrence, dayKey, toMinutes, toClock, learnedStart, morningDue, DAY_STARTS_AT } = require("./schedule.cjs");
 
 const MAX_REMINDER_DAYS = 30;
@@ -84,16 +85,19 @@ async function fireDueReminders() {
     await writeJson("reminders.json", kept);
     return ready;
   });
-  for (const reminder of due) {
-    if (Notification.isSupported()) {
-      const notification = new Notification({ title: "Isabel · Recordatorio", body: reminder.text, silent: false });
-      notification.on("click", showWindow);
-      notification.show();
-    }
-    // The page says it aloud and shows it (works even with the window in the tray).
-    config.getWindow()?.webContents.send("reminder", { text: reminder.text, at: reminder.at, early: (reminder.headsUp ?? 0) > 0 });
-    config.getWindow()?.flashFrame(true);
+  for (const reminder of due) announce({ text: reminder.text, at: reminder.at, early: (reminder.headsUp ?? 0) > 0 });
+}
+
+/** A reminder or an upcoming calendar event: Windows notification + spoken by the page. */
+function announce({ text, at, early }) {
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title: "Isabel · Recordatorio", body: text, silent: false });
+    notification.on("click", showWindow);
+    notification.show();
   }
+  // The page says it aloud and shows it (works even with the window in the tray).
+  config.getWindow()?.webContents.send("reminder", { text, at, early });
+  config.getWindow()?.flashFrame(true);
 }
 
 // ---- morning greeting -----------------------------------------------------------------
@@ -165,6 +169,7 @@ function startReminders() {
   };
   tick();
   setInterval(tick, CHECK_EVERY_MS);
+  google.watchEvents(announce); // "en 15 minutos tienes…" (only when Google is connected)
 }
 
 function formatTime(ms) {
@@ -479,6 +484,7 @@ const HANDLERS = {
   read_clipboard: readClipboard,
   write_clipboard: writeClipboard,
   look_at_screen: lookAtScreen,
+  ...google.HANDLERS,
 };
 
 const MUSIC_TOOLS = new Set(["media_control", "now_playing", "spotify_play"]);
@@ -496,7 +502,7 @@ async function runAction(tool, args) {
 }
 
 // Actions that need the user's approval in the chat first (checked again by main.cjs).
-const NEEDS_APPROVAL = new Set(["save_routine", "read_clipboard", "write_clipboard", "look_at_screen"]);
+const NEEDS_APPROVAL = new Set(["save_routine", "read_clipboard", "write_clipboard", "look_at_screen", "calendar_create_event"]);
 
 /** open_url needs approval when the URL could carry data (same rule as the API). */
 function needsApproval(tool, args) {

@@ -7,6 +7,7 @@ import { saveSettings } from "../lib/storage";
 import { loadVoices, playSpeech } from "../voice/speech";
 import type { WakeState } from "../voice/useWakeWord";
 import { CloseIcon } from "./Icons";
+import { GoogleSettings } from "./GoogleSettings";
 import { MorningSettings } from "./MorningSettings";
 
 interface Props {
@@ -331,6 +332,11 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
         ) : null}
 
         {window.assistant ? <SpotifySection /> : null}
+        {window.assistant ? (
+          <Section title="Google: calendario y correo">
+            <GoogleSettings />
+          </Section>
+        ) : null}
 
         <button type="button" className="button button--ghost button--block" onClick={() => setOrb(DEFAULT_ORB)}>
           Restablecer la burbuja

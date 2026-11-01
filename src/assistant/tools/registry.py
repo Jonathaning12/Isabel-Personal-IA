@@ -278,6 +278,30 @@ class LookAtScreenArgs(BaseModel):
     )
 
 
+class CalendarEventsArgs(BaseModel):
+    start_from: str | None = Field(
+        default=None, max_length=40, description="Start, ISO 8601 with offset (default: today)"
+    )
+    days: int = Field(default=1, ge=1, le=31, description="How many days to show")
+    query: str | None = Field(default=None, max_length=100, description="Text to search")
+
+
+class CalendarCreateArgs(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    start: str = Field(max_length=40, description="ISO 8601 with offset, computed from NOW")
+    end: str | None = Field(default=None, max_length=40, description="Default: 1 h later")
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class GmailSearchArgs(BaseModel):
+    query: str = Field(
+        default="is:unread newer_than:2d",
+        max_length=200,
+        description='Gmail search syntax, e.g. "from:banco newer_than:7d"',
+    )
+    max: int = Field(default=8, ge=1, le=10)
+
+
 class WeatherArgs(BaseModel):
     place: str = Field(min_length=2, max_length=100, description="City, e.g. 'Torreón'")
     days: int = Field(default=1, ge=1, le=7, description="Days of forecast")
@@ -537,6 +561,27 @@ TOOLS: dict[str, Tool] = {
             "Leave a text copied in the user's clipboard (replaces what is there).",
             WriteClipboardArgs,
             side_effect=True,
+            client_side=True,
+        ),
+        Tool(
+            "calendar_events",
+            "List the user's Google Calendar events (today by default, or a range).",
+            CalendarEventsArgs,
+            side_effect=False,
+            client_side=True,
+        ),
+        Tool(
+            "calendar_create_event",
+            "Create an event in the user's Google Calendar (needs approval).",
+            CalendarCreateArgs,
+            side_effect=True,
+            client_side=True,
+        ),
+        Tool(
+            "gmail_search",
+            "Read recent emails from the user's Gmail (sender, subject, snippet; read only).",
+            GmailSearchArgs,
+            side_effect=False,
             client_side=True,
         ),
         Tool(

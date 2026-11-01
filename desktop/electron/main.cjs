@@ -19,6 +19,7 @@ const {
 const { pathToFileURL } = require("node:url");
 const computer = require("./computer.cjs");
 const actions = require("./desktop-actions.cjs");
+const google = require("./google.cjs");
 
 let mainWindow = null;
 let tray = null;
@@ -554,6 +555,11 @@ app.whenReady().then(async () => {
   ipcMain.handle("spotify:connect", (event, clientId) =>
     trustedSender(event) ? computer.connect(String(clientId ?? "").trim()) : { ok: false },
   );
+  ipcMain.handle("google:status", (event) => (trustedSender(event) ? google.status() : null));
+  ipcMain.handle("google:connect", (event, value) =>
+    trustedSender(event) && value && typeof value === "object" ? google.connect(value) : { ok: false },
+  );
+  ipcMain.handle("google:disconnect", (event) => (trustedSender(event) ? google.disconnect() : { ok: false }));
   ipcMain.handle("spotify:disconnect", (event) => (trustedSender(event) ? computer.disconnect() : { ok: false }));
   ipcMain.handle("window:info", (event) => (trustedSender(event) ? { customControls: material === "glass", material } : null));
   ipcMain.handle("window:control", windowControl);

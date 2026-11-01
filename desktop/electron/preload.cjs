@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld("assistant", {
     return () => ipcRenderer.removeListener("statusbar:command", listener);
   },
   spotifyStatus: () => ipcRenderer.invoke("spotify:status"),
+  googleStatus: () => ipcRenderer.invoke("google:status"),
+  googleConnect: (clientId, clientSecret) => ipcRenderer.invoke("google:connect", { clientId, clientSecret }),
+  googleDisconnect: () => ipcRenderer.invoke("google:disconnect"),
   spotifyConnect: (clientId) => ipcRenderer.invoke("spotify:connect", clientId),
   spotifyDisconnect: () => ipcRenderer.invoke("spotify:disconnect"),
   windowControl: (action) => ipcRenderer.invoke("window:control", action),
