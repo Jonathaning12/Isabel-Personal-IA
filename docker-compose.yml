@@ -2,6 +2,7 @@
 services:
   qdrant:
     image: qdrant/qdrant:v1.20.0
+    restart: unless-stopped # back up with Docker after a reboot
     volumes:
       - qdrant_data:/qdrant/storage
     ports:
@@ -43,6 +44,7 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
     env_file: .env
     environment:
       # Inside Docker, Qdrant is reached by its service name, not localhost.

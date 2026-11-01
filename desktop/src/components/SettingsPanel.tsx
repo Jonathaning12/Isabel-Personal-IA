@@ -304,6 +304,14 @@ export function SettingsPanel({ open, settings, activeMaterial, wakeStatus, prev
             </label>
             <MorningSettings />
             <label className="toggle">
+              <input
+                type="checkbox"
+                checked={settings.startWithWindows}
+                onChange={(e) => onChange({ ...settings, startWithWindows: e.target.checked })}
+              />
+              <span>Abrir Isabel al iniciar Windows (en la bandeja)</span>
+            </label>
+            <label className="toggle">
               <input type="checkbox" checked={settings.closeToTray} onChange={(e) => onChange({ ...settings, closeToTray: e.target.checked })} />
               <span>Al cerrar, seguir en la bandeja del sistema</span>
             </label>

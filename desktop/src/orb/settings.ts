@@ -50,6 +50,8 @@ export interface AppSettings {
   closeToTray: boolean;
   /** Small floating bar at the top of the screen while the window is minimized or hidden. */
   statusBar: boolean;
+  /** Open Isabel (hidden in the tray) when Windows starts. */
+  startWithWindows: boolean;
   /** How Isabel calls the user ("Jonathan, no te olvides de…"). */
   userName: string;
 }
@@ -166,6 +168,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   currentProject: null,
   closeToTray: true,
   statusBar: true,
+  startWithWindows: true,
   userName: "",
 };
 
@@ -225,6 +228,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       typeof saved.currentProject === "string" && saved.currentProject.length < 200 ? saved.currentProject : null,
     closeToTray: typeof saved.closeToTray === "boolean" ? saved.closeToTray : true,
     statusBar: typeof saved.statusBar === "boolean" ? saved.statusBar : true,
+    startWithWindows: typeof saved.startWithWindows === "boolean" ? saved.startWithWindows : true,
     userName: typeof saved.userName === "string" ? saved.userName.trim().slice(0, 40) : "",
     naturalVoice: NATURAL_VOICES.some((v) => v.id === saved.naturalVoice)
       ? (saved.naturalVoice as string)

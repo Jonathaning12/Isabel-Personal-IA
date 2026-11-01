@@ -28,6 +28,30 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const API_URL = (process.env.ASSISTANT_API_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+
+// The API's bearer token (src/assistant/api/auth.py): ASSISTANT_API_TOKEN, or the file the
+// API writes in the project's data/ folder on its first start. Read again after a 401
+// (e.g. the token was regenerated).
+const PROJECT_DIR = process.env.ASSISTANT_PROJECT_DIR || path.join(__dirname, "..", "..");
+let cachedToken = null;
+function apiToken(refresh = false) {
+  if (cachedToken === null || refresh) {
+    try {
+      cachedToken = process.env.ASSISTANT_API_TOKEN || fsSync.readFileSync(path.join(PROJECT_DIR, "data", "api_token"), "utf-8").trim();
+    } catch {
+      cachedToken = "";
+    }
+  }
+  return cachedToken;
+}
+
+async function apiFetch(url, init = {}) {
+  const send = () => fetch(url, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${apiToken()}` } });
+  const response = await send();
+  if (response.status !== 401) return response;
+  apiToken(true);
+  return send();
+}
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const SUPPORTED_DOCS = ["md", "txt", "pdf"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -107,7 +131,7 @@ async function apiRequest(event, { method, route, body }) {
     return FORBIDDEN;
   }
   try {
-    const response = await fetch(`${API_URL}${route}`, {
+    const response = await apiFetch(`${API_URL}${route}`, {
       method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -120,7 +144,7 @@ async function apiRequest(event, { method, route, body }) {
 
 async function postForm(route, form) {
   try {
-    const response = await fetch(`${API_URL}${route}`, { method: "POST", body: form });
+    const response = await apiFetch(`${API_URL}${route}`, { method: "POST", body: form });
     return { ok: response.ok, status: response.status, data: await readJson(response) };
   } catch {
     return { ok: false, status: 0, data: { detail: "api_unreachable" } };
@@ -167,7 +191,7 @@ async function pickAndIngest(event) {
 async function speakNatural(event, { text, voice }) {
   if (!trustedSender(event) || typeof text !== "string" || !text.trim()) return FORBIDDEN;
   try {
-    const response = await fetch(`${API_URL}/speak`, {
+    const response = await apiFetch(`${API_URL}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: text.slice(0, 1500), voice: typeof voice === "string" ? voice : null }),
@@ -200,7 +224,18 @@ async function loadSettings() {
 async function saveSettings(event, settings) {
   if (!trustedSender(event)) return false;
   await fs.writeFile(settingsFile(), JSON.stringify(settings, null, 2), "utf-8");
+  applyStartWithWindows(settings?.startWithWindows !== false);
   return true;
+}
+
+// Start with Windows, hidden in the tray: the morning greeting, reminders and "Isabel"
+// work from the moment the user logs in. In development the app folder is passed to
+// electron.exe; the packaged app is its own executable.
+const START_HIDDEN = "--hidden";
+function applyStartWithWindows(enabled) {
+  if (process.platform !== "win32") return;
+  const args = app.isPackaged ? [START_HIDDEN] : [app.getAppPath(), START_HIDDEN];
+  app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args });
 }
 
 // The window material is chosen at startup (it cannot change on a live window):
@@ -257,7 +292,7 @@ function windowControl(event, action) {
 async function isApprovedAction(threadId, toolCallId, tool, args) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(threadId)) || !toolCallId) return false;
   try {
-    const response = await fetch(`${API_URL}/chat/${threadId}/pending-action`);
+    const response = await apiFetch(`${API_URL}/chat/${threadId}/pending-action`);
     if (!response.ok) return false;
     const pending = await response.json();
     return (
@@ -300,8 +335,9 @@ function createTray() {
   tray.on("click", () => (mainWindow ? actions.showWindow() : createWindow()));
 }
 
-function createWindow() {
+function createWindow({ hidden = false } = {}) {
   const window = new BrowserWindow({
+    show: !hidden, // started with Windows: straight to the tray
     width: 1280,
     height: 820,
     minWidth: 720,
@@ -332,7 +368,10 @@ function createWindow() {
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   // Reminders start once the page can speak them (also those already due at startup).
-  window.webContents.once("did-finish-load", () => actions.startReminders());
+  window.webContents.once("did-finish-load", () => {
+    actions.startReminders();
+    if (hidden) updateStatusBar(); // never shown, so no "hide" event: show the strip now
+  });
   // ASSISTANT_DEBUG=1 copies the page's console to the terminal (useful when testing).
   if (process.env.ASSISTANT_DEBUG) {
     window.webContents.on("console-message", (details) => {
@@ -460,7 +499,7 @@ app.whenReady().then(async () => {
   const runOne = process.argv.indexOf("--run-action");
   if (runOne !== -1) {
     // Troubleshooting only: run one computer action exactly like the agent would.
-    actions.init({ apiUrl: API_URL, getWindow: () => null, runMusic: (t, a) => computer.runAction(t, a) });
+    actions.init({ apiUrl: API_URL, apiFetch, getWindow: () => null, runMusic: (t, a) => computer.runAction(t, a) });
     const tool = process.argv[runOne + 1] ?? "";
     const args = JSON.parse(process.argv[runOne + 2] ?? "{}");
     process.stdout.write(`${JSON.stringify(await actions.runAction(tool, args), null, 2)}\n`);
@@ -530,11 +569,13 @@ app.whenReady().then(async () => {
   material = windowMaterial();
   actions.init({
     apiUrl: API_URL,
+    apiFetch,
     getWindow: () => mainWindow,
     runMusic: (tool, args) => computer.runAction(tool, args),
   });
-  createWindow();
+  createWindow({ hidden: process.argv.includes(START_HIDDEN) });
   createTray();
+  void loadSettings().then((saved) => applyStartWithWindows(saved?.startWithWindows !== false));
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
