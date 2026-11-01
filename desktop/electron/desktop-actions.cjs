@@ -13,6 +13,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { fireTime, nextOccurrence, dayKey, toMinutes, toClock, learnedStart, morningDue, DAY_STARTS_AT } = require("./schedule.cjs");
 
 const MAX_REMINDER_DAYS = 30;
 const CHECK_EVERY_MS = 15_000;
@@ -69,18 +70,6 @@ function showWindow() {
 }
 
 const REPEATS = new Set(["none", "daily", "weekdays", "weekly"]);
-// A reminder fires `headsUp` minutes before its time ("ya casi son las 7").
-const fireTime = (r) => r.at - (r.headsUp ?? 0) * 60_000;
-
-/** The next time a repeating reminder is due, strictly after `now` (missed ones are skipped). */
-function nextOccurrence(at, repeat, now) {
-  const next = new Date(at);
-  do {
-    next.setDate(next.getDate() + (repeat === "weekly" ? 7 : 1));
-    while (repeat === "weekdays" && (next.getDay() === 0 || next.getDay() === 6)) next.setDate(next.getDate() + 1);
-  } while (next.getTime() <= now);
-  return next.getTime();
-}
 
 async function fireDueReminders() {
   const due = await serial(async () => {
@@ -116,20 +105,6 @@ async function fireDueReminders() {
 const MORNING_FILE = "morning.json";
 const MORNING_DEFAULT = { enabled: true, mode: "auto", time: null, lastGreeted: null, lastStartDay: null, starts: [] };
 const ACTIVE_IDLE_S = 120;
-const DAY_STARTS_AT = 4 * 60; // activity before 4:00 belongs to the previous night
-const MORNING_ENDS_AT = 12 * 60;
-
-const dayKey = (date) => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-const toMinutes = (hhmm) => {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? ""));
-  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
-};
-const toClock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-
-function learnedStart(starts) {
-  const minutes = starts.map(toMinutes).filter((m) => m !== null).sort((a, b) => a - b);
-  return minutes.length >= 3 ? minutes[Math.floor(minutes.length / 2)] : null;
-}
 
 async function readMorning() {
   const saved = await readJson(MORNING_FILE, {});
@@ -150,10 +125,7 @@ async function checkMorning() {
       morning.lastStartDay = today;
       changed = true;
     }
-    const learned = learnedStart(morning.starts.slice(0, -1)); // without today's
-    const target =
-      morning.mode === "fixed" ? toMinutes(morning.time) : learned !== null ? Math.max(DAY_STARTS_AT, learned - 30) : DAY_STARTS_AT;
-    const due = morning.enabled && morning.lastGreeted !== today && target !== null && minutes >= target && minutes < MORNING_ENDS_AT;
+    const due = morningDue(morning, learnedStart(morning.starts.slice(0, -1)), minutes, today); // without today's start
     if (due) {
       morning.lastGreeted = today;
       changed = true;

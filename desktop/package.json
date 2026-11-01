@@ -10,7 +10,8 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "fetch-model": "node scripts/fetch-wake-model.mjs",
-    "preview": "vite"
+    "preview": "vite",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^19.3.1",
@@ -28,6 +29,7 @@
     "electron": "^45.1.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
+    "vitest": "^5.0.5",
     "wait-on": "^9.5.1"
   }
 }

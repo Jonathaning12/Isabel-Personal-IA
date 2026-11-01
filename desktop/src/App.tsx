@@ -8,6 +8,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { VoiceGlow } from "./components/VoiceGlow";
 import { Sidebar } from "./components/Sidebar";
 import { STATUS_LABELS } from "./lib/labels";
+import { reminderPhrase } from "./lib/phrases";
 import { loadSettings, saveSettings } from "./lib/storage";
 import type { OrbState } from "./orb/OrbEngine";
 import { ParticleOrb } from "./orb/ParticleOrb";
@@ -331,24 +332,6 @@ export function App() {
       ) : null}
     </div>
   );
-}
-
-/** "Jonathan, no te olvides de regar las plantas. Ya casi son las 7 de la tarde." */
-function reminderPhrase(text: string, name: string, soon: Date | null): string {
-  const task = text.trim().replace(/[.!]+$/, "");
-  const lead = name ? `${name}, no` : "No";
-  const remind = /^(no |hoy |ya )/i.test(task) ? `${name ? `${name}, ` : ""}${task}.` : `${lead} te olvides de ${task}.`;
-  return soon ? `${remind} Ya casi son ${spokenTime(soon)}.` : remind;
-}
-
-/** 19:00 → "las 7 de la tarde"; 13:30 → "la 1 y media de la tarde". */
-function spokenTime(date: Date): string {
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const hour12 = hours % 12 || 12;
-  const part = hours < 12 ? "de la mañana" : hours < 20 ? "de la tarde" : "de la noche";
-  const extra = minutes === 0 ? "" : minutes === 30 ? " y media" : minutes === 15 ? " y cuarto" : ` y ${minutes}`;
-  return `${hour12 === 1 ? "la" : "las"} ${hour12}${extra} ${part}`;
 }
 
 function previewPhase(state: OrbState): keyof typeof STATUS_LABELS {
