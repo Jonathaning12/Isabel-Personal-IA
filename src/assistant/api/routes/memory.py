@@ -112,6 +112,18 @@ async def consolidate(request: Request, body: ConsolidateRequest) -> dict:
     }
 
 
+@router.get("/memory/episodes")
+async def list_episodes(request: Request) -> dict:
+    return {"episodes": await request.app.state.episodes.list()}
+
+
+@router.delete("/memory/episodes/{episode_id}")
+async def forget_episode(request: Request, episode_id: str) -> dict:
+    if not await request.app.state.episodes.forget(episode_id):
+        raise HTTPException(404, "Episode not found")
+    return {"id": episode_id, "deleted": True}
+
+
 @router.get("/habits")
 async def habits(request: Request) -> dict:
     """What Isabel learned by watching (today: the most played artists)."""

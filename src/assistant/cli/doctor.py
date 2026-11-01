@@ -16,7 +16,7 @@ from rich.table import Table
 
 from assistant.api.auth import client_token
 from assistant.config import Settings
-from assistant.memory.store import DOCUMENTS, USER_FACTS
+from assistant.memory.store import DOCUMENTS, EPISODES, USER_FACTS
 
 Check = tuple[bool, str, str]  # (ok, detail, how to fix)
 
@@ -70,14 +70,14 @@ def _qdrant(settings: Settings) -> Check:
     url = settings.qdrant_url.replace("://qdrant:", "://localhost:")
     collections = httpx.get(f"{url}/collections", timeout=5).json()["result"]["collections"]
     names = {c["name"] for c in collections}
-    for name in (DOCUMENTS, USER_FACTS):
+    for name in (DOCUMENTS, USER_FACTS, EPISODES):
         if name in names:
             info = httpx.get(f"{url}/collections/{name}", timeout=5).json()["result"]
             size = info["config"]["params"]["vectors"]["size"]
             if size != settings.embed_dim:
                 return (False, f"'{name}' tiene tamaño {size}", "Borra la colección y re-indexa")
-    count = sum(1 for n in (DOCUMENTS, USER_FACTS) if n in names)
-    return (True, f"Accesible en {url} · {count}/2 colecciones", "")
+    count = sum(1 for n in (DOCUMENTS, USER_FACTS, EPISODES) if n in names)
+    return (True, f"Accesible en {url} · {count}/3 colecciones", "")
 
 
 def _sandbox(settings: Settings) -> Check:

@@ -92,6 +92,8 @@ const ALLOWED_ROUTES = [
   /^GET \/habits$/,
   /^GET \/voice\/status$/,
   /^POST \/memory\/consolidate$/,
+  /^GET \/memory\/episodes$/,
+  /^DELETE \/memory\/episodes\/[A-Za-z0-9-]{1,64}$/,
   /^DELETE \/habits$/,
   /^GET \/projects$/,
   /^POST \/vault\/sync$/,

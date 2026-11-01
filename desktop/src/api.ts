@@ -89,6 +89,12 @@ export interface IngestResult {
   message: string;
 }
 
+export interface Episode {
+  id: string;
+  summary: string;
+  ended_at: string;
+}
+
 export interface ConsolidationPlan {
   merge: { ids: string[]; fact: string; category: string }[];
   drop: string[];
@@ -252,6 +258,8 @@ export const api = {
     }),
   habits: () => request<{ artists: { name: string; plays: number }[] }>("GET", "/habits"),
   clearHabits: () => request("DELETE", "/habits"),
+  episodes: () => request<{ episodes: Episode[] }>("GET", "/memory/episodes"),
+  deleteEpisode: (id: string) => request("DELETE", `/memory/episodes/${id}`),
   consolidate: () => request<ConsolidationPreview>("POST", "/memory/consolidate", {}),
   applyConsolidation: (plan: ConsolidationPlan) =>
     request<{ merged: number; dropped: number }>("POST", "/memory/consolidate", { plan }),

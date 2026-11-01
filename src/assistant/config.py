@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     fact_dedup_threshold: float = 0.9
     # Facts this similar (but below the dedup threshold) are checked for contradictions.
     fact_related_threshold: float = 0.6
+    # Past-conversation summaries at least this similar to the message go into the prompt.
+    episode_min_score: float = 0.45
     # Learn facts the user mentions in passing (one extra cheap LLM call per message).
     auto_learn: bool = True
 

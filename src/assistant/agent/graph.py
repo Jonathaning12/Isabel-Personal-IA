@@ -30,6 +30,7 @@ from assistant.agent.clock import describe_now
 from assistant.agent.prompts import (
     AGENT_SYSTEM,
     ALL_REJECTED_ANSWER,
+    EPISODES_BLOCK,
     FACTS_BLOCK,
     HABITS_BLOCK,
     NO_NOTES_CONTEXT,
@@ -41,6 +42,7 @@ from assistant.agent.rag import format_context, normalize_citations
 from assistant.agent.state import AgentState
 from assistant.config import Settings
 from assistant.guardrails.audit import AuditLog
+from assistant.memory.episodes import EpisodeMemory
 from assistant.memory.facts import FactMemory, SupportsComplete
 from assistant.memory.habits import HabitLog
 from assistant.memory.retrieval import Citation, Retriever
@@ -69,6 +71,7 @@ class AgentDeps:
     ingestor: SupportsIngest | None = None  # re-indexes notes after write_note
     workspace: Workspace | None = None  # the user's projects folder (folders, git)
     habits: HabitLog | None = None  # what Isabel learned by watching (music)
+    episodes: EpisodeMemory | None = None  # summaries of past conversations
 
 
 def build_system_prompt(
@@ -83,9 +86,13 @@ def build_system_prompt(
     projects_name: str = "Documentos",
     habits: list[str] | None = None,
     user_name: str | None = None,
+    episodes: list[str] | None = None,
 ) -> str:
     facts_block = FACTS_BLOCK.format(facts="\n".join(f"- {f}" for f in facts)) if facts else ""
     habits_block = HABITS_BLOCK.format(habits="\n".join(f"- {h}" for h in habits)) if habits else ""
+    episodes_block = (
+        EPISODES_BLOCK.format(episodes="\n".join(f"- {e}" for e in episodes)) if episodes else ""
+    )
     user_block = (
         f"The user's name is {user_name}. Use it now and then (greetings, reminders), not "
         "in every answer."
@@ -122,6 +129,7 @@ def build_system_prompt(
         ),
         facts_block=facts_block,
         habits_block=habits_block,
+        episodes_block=episodes_block,
         user_block=user_block,
         skills_block=skills_block,
         previous_sources_block=sources_block,
@@ -199,7 +207,7 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
 
     tool_specs = openai_tool_specs()
 
-    async def load_context(state: AgentState) -> dict[str, Any]:
+    async def load_context(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         # Remember which sources the previous answer cited, before this turn's search
         # replaces the context ("where did you get that?").
         previous = [m for m in state["messages"][:-1] if m["role"] == "assistant"]
@@ -215,10 +223,18 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             unavailable = False
         except Exception as exc:  # degrade gracefully: answer without notes
             logger.warning("load_context_failed error=%s", type(exc).__name__)
-            citations, facts, unavailable = [], [], True
+            citations, facts, unavailable, vector = [], [], True, None
+        episodes: list[str] = []
+        if deps.episodes is not None and vector is not None:
+            thread_id = config.get("configurable", {}).get("thread_id")
+            try:
+                episodes = await deps.episodes.relevant(vector, thread_id)
+            except Exception as exc:  # past conversations are a bonus, never a blocker
+                logger.warning("episodes_failed error=%s", type(exc).__name__)
         return {
             "context": citations,
             "facts": facts,
+            "episodes": episodes,
             "actions": [],
             "iterations": 0,
             "notes_unavailable": unavailable,
@@ -239,6 +255,7 @@ def build_graph(deps: AgentDeps, checkpointer: Any) -> Any:
             projects_name=deps.settings.projects_name,
             habits=deps.habits.describe() if deps.habits else None,
             user_name=state.get("user_name"),
+            episodes=state.get("episodes"),
         )
         reply = await deps.chat.complete(
             [{"role": "system", "content": system}, *state["messages"]],

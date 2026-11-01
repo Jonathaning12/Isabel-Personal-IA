@@ -19,3 +19,4 @@ class AgentState(TypedDict, total=False):
     now: str  # the user's local date and time for this turn, sent by the client
     project: str | None  # the project folder selected in the app ("esta carpeta")
     user_name: str | None  # the name the user set in the app, if any
+    episodes: list[str]  # summaries of related past conversations, with their date

@@ -24,6 +24,7 @@ from assistant.ingest.pipeline import Ingestor
 from assistant.llm.chat import ChatClient
 from assistant.llm.client import build_client
 from assistant.llm.embeddings import Embedder
+from assistant.memory.episodes import EpisodeMemory
 from assistant.memory.facts import FactMemory
 from assistant.memory.habits import HabitLog
 from assistant.memory.retrieval import Retriever
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.ingestor = Ingestor(store, embedder, settings)
     app.state.retriever = Retriever(store, embedder, settings)
     app.state.facts = FactMemory(store, embedder, chat, settings)
+    app.state.episodes = EpisodeMemory(store, embedder, chat, settings)
 
     # Conversation state (LangGraph checkpoints) persists in data/checkpoints.sqlite.
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ingestor=app.state.ingestor,
             workspace=app.state.workspace,
             habits=app.state.habits,
+            episodes=app.state.episodes,
         )
         app.state.graph = build_graph(deps, checkpointer)
         yield

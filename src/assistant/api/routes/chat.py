@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from assistant.agent.clock import describe_now
 from assistant.agent.graph import CLIENT_ACTION, payload_fingerprint
+from assistant.memory.episodes import due_for_summary
 from assistant.memory.habits import artist_from_play
 
 router = APIRouter()
@@ -80,6 +81,14 @@ async def learn_quietly(request: Request, message: str) -> None:
         logger.info("auto_learn facts=%d", len(learned))
 
 
+async def summarize_quietly(request: Request, thread_id: str, messages: list) -> None:
+    """Background: refresh this conversation's summary (its "episode")."""
+    try:
+        await request.app.state.episodes.summarize(thread_id, messages)
+    except Exception as exc:  # best effort, like learning
+        logger.warning("episode_failed error=%s", type(exc).__name__)
+
+
 @router.post("/chat")
 async def chat(request: Request, body: ChatRequest, background: BackgroundTasks) -> dict[str, Any]:
     thread_id = body.thread_id or uuid.uuid4().hex
@@ -95,6 +104,8 @@ async def chat(request: Request, body: ChatRequest, background: BackgroundTasks)
     settings = request.app.state.settings
     if settings.auto_learn and not body.automatic and len(body.message) >= MIN_LEARN_CHARS:
         background.add_task(learn_quietly, request, body.message)
+    if due_for_summary(result.get("messages", [])):
+        background.add_task(summarize_quietly, request, thread_id, result["messages"])
     return _response(thread_id, result)
 
 

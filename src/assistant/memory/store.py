@@ -1,8 +1,9 @@
 """Qdrant wrapper: the assistant's local long-term memory.
 
-Two collections (think "tables" whose index is a meaning search):
+Three collections (think "tables" whose index is a meaning search):
 - documents:  chunks of the user's files, each with its embedding vector.
 - user_facts: durable facts about the user ("prefers bullet-point answers").
+- episodes:   short summaries of past conversations, one per conversation.
 
 Qdrant runs locally in Docker; nothing here leaves the machine.
 """
@@ -15,7 +16,12 @@ from assistant.config import Settings
 
 DOCUMENTS = "documents"
 USER_FACTS = "user_facts"
-_INDEXED_FIELDS = {DOCUMENTS: ["source_path", "sha256", "doc_id"], USER_FACTS: ["category"]}
+EPISODES = "episodes"
+_INDEXED_FIELDS = {
+    DOCUMENTS: ["source_path", "sha256", "doc_id"],
+    USER_FACTS: ["category"],
+    EPISODES: ["thread_id"],
+}
 
 
 class CollectionDimensionError(RuntimeError):
@@ -39,10 +45,16 @@ class MemoryStore:
         # The prefix lets integration tests use throwaway collections.
         self.documents = f"{prefix}{DOCUMENTS}"
         self.user_facts = f"{prefix}{USER_FACTS}"
+        self.episodes = f"{prefix}{EPISODES}"
 
     async def ensure_collections(self) -> None:
         """Create missing collections; fail fast if an existing one has the wrong size."""
-        for name, base in ((self.documents, DOCUMENTS), (self.user_facts, USER_FACTS)):
+        collections = (
+            (self.documents, DOCUMENTS),
+            (self.user_facts, USER_FACTS),
+            (self.episodes, EPISODES),
+        )
+        for name, base in collections:
             if await self.client.collection_exists(name):
                 info = await self.client.get_collection(name)
                 size = info.config.params.vectors.size  # type: ignore[union-attr]
@@ -154,5 +166,52 @@ class MemoryStore:
             return False
         await self.client.delete(
             self.user_facts, points_selector=models.PointIdsList(points=[fact_id]), wait=True
+        )
+        return True
+
+    # --- episodes (conversation summaries) -----------------------------------------
+
+    async def upsert_episode(
+        self, episode_id: str, vector: list[float], payload: dict[str, Any]
+    ) -> None:
+        await self.client.upsert(
+            self.episodes,
+            points=[models.PointStruct(id=episode_id, vector=vector, payload=payload)],
+        )
+
+    async def search_episodes(
+        self, vector: list[float], *, limit: int, min_score: float, exclude_thread: str | None
+    ) -> list[models.ScoredPoint]:
+        not_this = (
+            models.Filter(
+                must_not=[
+                    models.FieldCondition(
+                        key="thread_id", match=models.MatchValue(value=exclude_thread)
+                    )
+                ]
+            )
+            if exclude_thread
+            else None
+        )
+        response = await self.client.query_points(
+            self.episodes,
+            query=vector,
+            query_filter=not_this,
+            limit=limit,
+            score_threshold=min_score,
+            with_payload=True,
+        )
+        return response.points
+
+    async def list_episodes(self) -> list[dict[str, Any]]:
+        points, _ = await self.client.scroll(self.episodes, limit=1000, with_payload=True)
+        episodes = [{"id": str(p.id), **(p.payload or {})} for p in points]
+        return sorted(episodes, key=lambda e: e.get("ended_at", ""), reverse=True)
+
+    async def delete_episode(self, episode_id: str) -> bool:
+        if not await self.client.retrieve(self.episodes, ids=[episode_id]):
+            return False
+        await self.client.delete(
+            self.episodes, points_selector=models.PointIdsList(points=[episode_id]), wait=True
         )
         return True

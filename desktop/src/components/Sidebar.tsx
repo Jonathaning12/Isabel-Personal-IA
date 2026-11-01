@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   ApiError,
   type DocumentInfo,
+  type Episode,
   type Fact,
   type ProjectsInfo,
   type Skill,
@@ -48,6 +49,7 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
   const [docs, setDocs] = useState<DocumentInfo[] | null>(null);
   const [facts, setFacts] = useState<Fact[] | null>(null);
   const [habits, setHabits] = useState<{ name: string; plays: number }[]>([]);
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [projects, setProjects] = useState<ProjectsInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -58,16 +60,18 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, f, s, p, h] = await Promise.all([
+      const [d, f, s, p, h, e] = await Promise.all([
         api.documents(),
         api.facts(),
         api.skills(),
         api.projects().catch(() => ({ configured: false }) as ProjectsInfo),
         api.habits().catch(() => ({ artists: [] })),
+        api.episodes().catch(() => ({ episodes: [] as Episode[] })),
       ]);
       setDocs(d.documents);
       setFacts(f.facts);
       setHabits(h.artists);
+      setEpisodes(e.episodes);
       setSkills(s.skills);
       setProjects(p);
     } catch (error) {
@@ -299,9 +303,27 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
                     onClick={() => void remove("habits", () => api.clearHabits(), "Hábitos olvidados")}
                   />
                 </li>
-                <h3 className="list__section">Datos sobre ti</h3>
               </>
             ) : null}
+            {episodes.length ? (
+              <>
+                <h3 className="list__section">Conversaciones recordadas</h3>
+                {episodes.slice(0, 20).map((ep) => (
+                  <li key={ep.id} className="list__item">
+                    <ChatIcon className="list__icon" />
+                    <div>
+                      <p className="list__title">{ep.summary}</p>
+                      <p className="list__detail">{new Date(ep.ended_at).toLocaleDateString("es")}</p>
+                    </div>
+                    <DeleteButton
+                      armed={confirming === `episode:${ep.id}`}
+                      onClick={() => void remove(`episode:${ep.id}`, () => api.deleteEpisode(ep.id), "Conversación olvidada")}
+                    />
+                  </li>
+                ))}
+              </>
+            ) : null}
+            {habits.length || episodes.length ? <h3 className="list__section">Datos sobre ti</h3> : null}
             {facts?.length === 0 ? (
               <Empty>Aún no sé nada de ti. Voy aprendiendo de lo que me cuentas, o dime «recuerda que…».</Empty>
             ) : null}
