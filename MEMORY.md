@@ -7,7 +7,7 @@ Post-hackathon (2026-10-30): the hackathon is over and the project is now the st
 1. Student: try the new features (status strip, morning greeting tomorrow, reminders by name, "Ordenar memoria", episodes) and report anything odd. Hover/click on the status strip and voice tests were not done live (PC locked).
 2. Student (optional): connect Google (Settings → Google, own OAuth client) and train the "Isabel" wake word in Colab (services/voice/TRAINING.md); drop the model in data/wakeword/isabel.onnx.
 3. Student (optional): install with desktop/release/Isabel Setup 0.1.0.exe (unsigned → SmartScreen once). The dev run and the installed app share data.
-4. Push the 15 local commits to the PR branch when the student asks (nothing pushed since 2817aa0).
+4. Push the local commits (2817aa0..HEAD, 14 so far) to the PR branch when the student asks.
 5. LAST (approved for the end of the project): Linux / always-on home server for the backend.
 6. Still open: Claude as an alternative brain.
 
