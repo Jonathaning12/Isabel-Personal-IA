@@ -41,7 +41,11 @@ def new_detector():
 
 
 def status() -> dict:
-    return {"available": available(), "model": MODEL.name if available() else None, "threshold": THRESHOLD}
+    return {
+        "available": available(),
+        "model": MODEL.name if available() else None,
+        "threshold": THRESHOLD,
+    }
 
 
 async def stream(websocket: WebSocket) -> None:
@@ -64,6 +68,8 @@ async def stream(websocket: WebSocket) -> None:
                 if score >= THRESHOLD and now - last > COOLDOWN_S:
                     last = now
                     detector.reset()  # start fresh: the same word must not fire twice
-                    await websocket.send_text(json.dumps({"detected": True, "score": round(float(score), 3)}))
+                    await websocket.send_text(
+                        json.dumps({"detected": True, "score": round(float(score), 3)})
+                    )
     except WebSocketDisconnect:
         return

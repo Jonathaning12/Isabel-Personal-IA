@@ -55,7 +55,8 @@ It reads your notes and documents, answers questions **citing the exact note** e
 
 ## Privacy & security
 
-- **Stored locally only**: documents and memory (Qdrant volume), conversations (`data/checkpoints.sqlite`), skills (`data/skills.json`), audit log (`data/audit.log`). Ports bind to `127.0.0.1`.
+- **Stored locally only**: documents, facts and conversation summaries (Qdrant volume), conversations (`data/checkpoints.sqlite`), skills (`data/skills.json`), habits (`data/habits.json`), voice cache (`data/tts_cache/`), audit log (`data/audit.log`). Ports bind to `127.0.0.1`.
+- **API token**: every route except `/health` needs `Authorization: Bearer <token>`. The token comes from `API_TOKEN` in `.env` or is generated once into `data/api_token`; the desktop app, the CLI and the scripts read it from there.
 - **What leaves the machine**: only the text sent to Nebius for inference (your question, the relevant note excerpts, text being embedded).
 - **You stay in control**: `assistant memory facts | forget | docs | delete-doc` physically delete data.
 - **Secrets**: the API key only lives in `.env` (gitignored, never baked into images). `gitleaks` runs on every commit.
@@ -120,7 +121,12 @@ cd desktop
 npm install
 npm run fetch-model           # once: local model for the wake word "Isabel"
 npm start                     # builds the UI and opens the app
+npm test                      # desktop unit tests (vitest)
+npm run dist                  # Windows installer: release/Isabel Setup <version>.exe
 ```
+
+- **Installer**: `npm run dist` builds an NSIS installer (unsigned, so Windows SmartScreen asks once). The installed app uses the same data folder as `npm start` (settings, reminders, sign-ins) and finds the API token through the project folder recorded at build time. The backend still runs with `docker compose`.
+- **Starts with Windows**: hidden in the tray (Settings → Aplicación). Docker Desktop must also start at login for the backend.
 
 - **Orb states**: idle (breathing), gathering (particles stream in), thinking (twist and faster spin), speaking (rings driven by the voice), listening (trembles with the mic level), approval pending (amber pulse), error (red flicker). Hover pushes particles away from the pointer; a click makes them burst. Particles assemble when the app opens.
 - **Customizable** (sliders icon, top right): shape (sphere, ring, cube, galaxy, helix, cloud), size, particle count and size, glow, six colors (base and per state), speed, rotation, turbulence, the intensity of every reaction, background dust, presets, and a live preview of each state. Preferences are saved in the user profile (`%APPDATA%/assistant-desktop/settings.json`).
@@ -150,6 +156,11 @@ npm start                     # builds the UI and opens the app
   - *Facts*: after each message, durable facts the user mentions in passing ("trabajo como…", "soy vegetariano") are extracted in the background and saved (Memory panel, marked "aprendido"; deletable). Only the user's own words are used, never documents or tool output. `AUTO_LEARN=false` turns it off.
   - *Music*: every song or artist that really played is logged in `data/habits.json`; the most played artists go into the prompt, so "pon música" plays something the user likes. Memory panel → delete to forget.
   - *Morning*: Isabel says "buenos días" with the briefing on her own, once a day before noon: at a fixed time ("me despierto a las 7") or, in auto mode, when the user first uses the PC in the morning (the usual start time is learned from the last 14 days). Settings → Aplicación.
+- **Speaks while generating**: when the local Piper voice is speaking (Gemini out of quota), the answer is synthesized sentence by sentence and the first one plays while the next is generated. With Gemini it stays one request per answer, to save the free quota.
+- **Memory hygiene**: a new fact that makes an older one false ("se mudó a Guadalajara" vs "vive en Monterrey") replaces it. Memory panel → **Ordenar memoria** proposes merging duplicates and dropping outdated facts; nothing changes until you press **Aplicar**.
+- **Past conversations**: each conversation keeps a one-to-three-sentence summary (refreshed every few turns, stored locally); summaries of related earlier conversations go into the prompt with their date, so "¿qué te pedí la semana pasada?" works. Listed and deletable in the Memory panel.
+- **Google Calendar and Gmail** (Settings → Google, with your own OAuth client): today's events in the morning briefing, an alert 15 minutes before each event, "agéndame…" (always with approval) and email summaries. Gmail is read only: Isabel can never send or delete email. Tokens are stored encrypted on this PC.
+- **Trained wake word** (optional): with `data/wakeword/isabel.onnx` the voice service detects "Isabel" with openWakeWord, much more precisely than the built-in Vosk grammar. `services/voice/TRAINING.md` explains how to train it in Google Colab in under an hour.
 - **Friendlier reminders**: they can repeat (daily, weekdays, weekly) and warn a few minutes early, by name: "Jonathan, no te olvides de regar las plantas. Ya casi son las 7 de la tarde." (name in Settings → Aplicación).
 - **Local time**: every message carries the user's clock and time zone, so "what time is it?", dates and simple arithmetic are answered directly, with no sandbox and no approval (the sandbox clock is UTC).
 - **Voice glow**: while recording, a faint light in the "listening" color lines the window edges and rises from the controls, breathing with the microphone level.
@@ -161,7 +172,8 @@ npm start                     # builds the UI and opens the app
 ## Tests and evaluation
 
 ```bash
-uv run pytest -q                          # 69 unit tests: agent, approvals, skills, RAG, memory (~1 s)
+uv run pytest -q                          # 161 unit tests: agent, approvals, memory, voice, token…
+(cd desktop && npm test)                  # 28 desktop tests: wake word, reminders, speech
 uv run pytest -q -m integration           # 12 tests: real Qdrant + real Docker sandbox
 uv run pytest -q -m live                  # real calls to Nebius (uses .env)
 uv run python scripts/eval_retrieval.py   # retrieval quality on paraphrased questions
