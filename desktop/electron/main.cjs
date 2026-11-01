@@ -90,6 +90,7 @@ const ALLOWED_ROUTES = [
   /^DELETE \/skills\/[a-z0-9_]{1,40}$/,
   /^GET \/vault$/,
   /^GET \/habits$/,
+  /^GET \/voice\/status$/,
   /^DELETE \/habits$/,
   /^GET \/projects$/,
   /^POST \/vault\/sync$/,

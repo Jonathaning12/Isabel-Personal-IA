@@ -29,6 +29,26 @@ export function speakableText(answer: string): string {
     .slice(0, 1200);
 }
 
+/** Splits an answer into pieces to synthesize one after another: a short first piece
+ * (so the voice starts soon), then pieces of up to `max` characters, always at sentence
+ * ends when possible. */
+export function splitForSpeech(text: string, first = 140, max = 300): string[] {
+  const sentences = text.match(/[^.!?…]+[.!?…]+["»)]*\s*|[^.!?…]+$/g)?.map((s) => s.trim()).filter(Boolean) ?? [];
+  const pieces: string[] = [];
+  let piece = "";
+  for (const sentence of sentences) {
+    const limit = pieces.length === 0 ? first : max;
+    if (piece && piece.length + sentence.length + 1 > limit) {
+      pieces.push(piece);
+      piece = sentence;
+    } else {
+      piece = piece ? `${piece} ${sentence}` : sentence;
+    }
+  }
+  if (piece) pieces.push(piece);
+  return pieces;
+}
+
 // The natural-voice clip currently playing (so "callar" and a new message can stop it).
 let current: { source: AudioBufferSourceNode; context: AudioContext; done: () => void } | null = null;
 

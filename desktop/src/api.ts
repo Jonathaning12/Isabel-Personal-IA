@@ -255,6 +255,9 @@ export const api = {
   skills: () => request<{ skills: Skill[] }>("GET", "/skills"),
   deleteSkill: (name: string) => request("DELETE", `/skills/${name}`),
   vault: () => request<VaultInfo>("GET", "/vault"),
+  /** Which voices can speak now (no quota spent): paused Gemini models, local Piper. */
+  voiceStatus: () =>
+    request<{ gemini: Record<string, { paused_s: number }>; local: string }>("GET", "/voice/status"),
   syncVault: () => request<{ results: IngestResult[]; removed: number }>("POST", "/vault/sync"),
 
   async ingest(): Promise<IngestResult[]> {

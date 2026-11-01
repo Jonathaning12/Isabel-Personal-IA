@@ -7,7 +7,7 @@ import { toolLabel, DECISION_LABELS } from "./lib/labels";
 import { loadThreadId, saveThreadId } from "./lib/storage";
 import type { AudioLevels, OrbState } from "./orb/OrbEngine";
 import { type Recording, startRecording } from "./voice/recorder";
-import { playSpeech, speak, speakableText, stopSpeaking } from "./voice/speech";
+import { playSpeech, speak, speakableText, splitForSpeech, stopSpeaking } from "./voice/speech";
 import { type Preroll, requestAfterName, stripWakeWord } from "./voice/wakeword";
 
 export type Phase = "idle" | "gathering" | "thinking" | "speaking" | "listening" | "transcribing" | "awaiting" | "error";
@@ -161,24 +161,42 @@ export function useAssistant({
   const speakAnswer = useCallback(
     async (answer: string, turn: number, during: Phase = "speaking") => {
       const { voiceEngine: engine, naturalVoice: voice, voiceName: systemVoice } = options.current;
+      let rest = answer; // what is still to be said if the natural voice stops halfway
       if (engine === "natural") {
-        try {
-          // The TTS service can be slow at peak times: never leave her silent for long.
-          const wav = await Promise.race([
-            api.speech(speakableText(answer), voice),
+        const moved = () => turn !== generation.current || live.current.phase !== during;
+        // The TTS service can be slow at peak times: never leave her silent for long.
+        const synthesize = (text: string) =>
+          Promise.race([
+            api.speech(text, voice),
             new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("slow")), NATURAL_VOICE_TIMEOUT_MS)),
           ]);
-          // Skip if the user moved on while the voice was being generated.
-          if (turn !== generation.current || live.current.phase !== during) return;
-          await playSpeech(wav, (level) => {
-            levels.speech = level;
-          });
+        try {
+          // With the local voice (Gemini out of quota or not used), synthesize sentence by
+          // sentence: the first one plays while the next is generated. With Gemini, one
+          // request per answer (splitting would spend the free quota 2–3× faster).
+          const status = await api.voiceStatus().catch(() => null);
+          const geminiFree = status ? Object.values(status.gemini).some((m) => m.paused_s === 0) : true;
+          const pieces = !geminiFree && status?.local === "ok" ? splitForSpeech(speakableText(answer)) : [speakableText(answer)];
+          let next = synthesize(pieces[0]);
+          for (let i = 0; i < pieces.length; i++) {
+            const wav = await next;
+            if (i + 1 < pieces.length) {
+              next = synthesize(pieces[i + 1]); // prefetch while this piece plays
+              next.catch(() => undefined); // a failure is handled when it is awaited
+            }
+            if (moved()) return; // the user moved on while the voice was being generated
+            await playSpeech(wav, (level) => {
+              levels.speech = level;
+            });
+            rest = pieces.slice(i + 1).join(" ");
+          }
           return;
         } catch {
-          // Natural voice unavailable (provider busy, Nebius, offline): use the system voice.
+          // Natural voice unavailable (provider busy, offline): the system voice says the rest.
+          if (moved() || !rest.trim()) return;
         }
       }
-      await speak(answer, {
+      await speak(rest, {
         voiceName: systemVoice,
         onPulse: (strength) => {
           levels.speech = Math.max(levels.speech, strength);
