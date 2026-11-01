@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(default=5, gt=0)
     retrieval_min_score: float = 0.42  # calibrated with scripts/eval_retrieval.py
     fact_dedup_threshold: float = 0.9
+    # Facts this similar (but below the dedup threshold) are checked for contradictions.
+    fact_related_threshold: float = 0.6
     # Learn facts the user mentions in passing (one extra cheap LLM call per message).
     auto_learn: bool = True
 

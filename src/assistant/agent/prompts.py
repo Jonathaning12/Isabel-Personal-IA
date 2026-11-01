@@ -27,6 +27,27 @@ NO_CONTEXT_ANSWER = (
     "Prueba a reformular la pregunta o a indexar más archivos con `assistant ingest`."
 )
 
+FACT_CONFLICT_SYSTEM = """You keep a long-term memory about the user up to date. You get a NEW \
+fact and some EXISTING facts on the same topic, each with an id. List the ids of the existing \
+facts that the new fact makes false or outdated (e.g. new "El usuario vive en Guadalajara" \
+replaces "El usuario vive en Monterrey"; new "Ya no toma café" replaces "Le gusta el café"). \
+Facts that are merely related, or that can both be true, are NOT replaced.
+
+Return ONLY JSON, no prose: {"replaces": ["id", ...]}. Return {"replaces": []} if none."""
+
+CONSOLIDATE_FACTS_SYSTEM = """You tidy up a long-term memory of facts about the user. You get \
+every fact with its id, category and date (newer facts are more reliable). Propose:
+- merge: groups of facts that say the same thing (or should be one fact), with ONE short \
+third-person sentence in Spanish that keeps all their information;
+- drop: ids of facts that are outdated (a newer fact contradicts them), meaningless, or not \
+about the user.
+Leave everything else untouched. Each id may appear at most once in the whole answer. Be \
+conservative: when unsure, leave the fact as it is.
+
+Return ONLY JSON, no prose: {"merge": [{"ids": ["id", "id"], "fact": "...", "category": \
+"preference|personal|work|goal|other"}], "drop": ["id"]}. Return {"merge": [], "drop": []} \
+if the memory is already tidy."""
+
 EXTRACT_FACTS_SYSTEM = """You extract durable facts about the user from their message, for a \
 long-term memory. A durable fact is a stable preference, personal detail, goal, or recurring \
 context (e.g. "prefers answers in bullet points", "works as a web developer"). Ignore \

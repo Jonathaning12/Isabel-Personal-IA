@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from assistant.agent.rag import answer_question
+from assistant.memory.facts import ConsolidationPlan
 
 router = APIRouter()
 
@@ -86,6 +87,29 @@ async def learn(request: Request, body: LearnRequest) -> dict:
     """Extract durable facts from free text (with Nemotron) and store them."""
     results = await request.app.state.facts.learn(body.text)
     return {"facts": [r.model_dump() for r in results]}
+
+
+class ConsolidateRequest(BaseModel):
+    # Without a plan: propose one (nothing changes). With the plan the user reviewed: apply it.
+    plan: ConsolidationPlan | None = None
+
+
+@router.post("/memory/consolidate")
+async def consolidate(request: Request, body: ConsolidateRequest) -> dict:
+    """Tidy the memory in two steps: preview the proposed merges/drops, then apply them."""
+    facts = request.app.state.facts
+    if body.plan is not None:
+        return await facts.apply_consolidation(body.plan)
+    plan = await facts.plan_consolidation()
+    texts = {f["id"]: f.get("fact", "") for f in await facts.list()}
+    return {
+        "plan": plan.model_dump(),
+        # What the user reads before approving: the facts each change touches.
+        "preview": {
+            "merge": [{"into": m.fact, "from": [texts[i] for i in m.ids]} for m in plan.merge],
+            "drop": [texts[i] for i in plan.drop],
+        },
+    }
 
 
 @router.get("/habits")

@@ -91,6 +91,7 @@ const ALLOWED_ROUTES = [
   /^GET \/vault$/,
   /^GET \/habits$/,
   /^GET \/voice\/status$/,
+  /^POST \/memory\/consolidate$/,
   /^DELETE \/habits$/,
   /^GET \/projects$/,
   /^POST \/vault\/sync$/,

@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { timeLabel } from "../lib/labels";
 import { Markdown } from "../lib/markdown";
+import { TidyMemory } from "./TidyMemory";
 import type { ActivityItem, Message } from "../useAssistant";
 import { BoltIcon, BrainIcon, BranchIcon, ChatIcon, FileIcon, FolderIcon, OpenIcon, PlusIcon, PulseIcon, RefreshIcon, TrashIcon } from "./Icons";
 
@@ -279,6 +280,11 @@ export function Sidebar({ open, vault, onVaultChanged, currentProject, onSelectP
 
         {tab === "memory" ? (
           <ul className="list">
+            {facts && facts.length > 1 ? (
+              <li className="list__tidy">
+                <TidyMemory onDone={() => void refresh()} onNotice={onNotice} />
+              </li>
+            ) : null}
             {habits.length ? (
               <>
                 <h3 className="list__section">Lo que más escuchas (aprendido)</h3>

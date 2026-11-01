@@ -89,6 +89,16 @@ export interface IngestResult {
   message: string;
 }
 
+export interface ConsolidationPlan {
+  merge: { ids: string[]; fact: string; category: string }[];
+  drop: string[];
+}
+
+export interface ConsolidationPreview {
+  plan: ConsolidationPlan;
+  preview: { merge: { into: string; from: string[] }[]; drop: string[] };
+}
+
 export interface MorningSettings {
   enabled: boolean;
   mode: "fixed" | "auto";
@@ -242,6 +252,9 @@ export const api = {
     }),
   habits: () => request<{ artists: { name: string; plays: number }[] }>("GET", "/habits"),
   clearHabits: () => request("DELETE", "/habits"),
+  consolidate: () => request<ConsolidationPreview>("POST", "/memory/consolidate", {}),
+  applyConsolidation: (plan: ConsolidationPlan) =>
+    request<{ merged: number; dropped: number }>("POST", "/memory/consolidate", { plan }),
   projects: () => request<ProjectsInfo>("GET", "/projects"),
   confirm: (threadId: string, decision: "approve" | "reject") =>
     request<ChatResponse>("POST", `/chat/${threadId}/confirm`, { decision }),
